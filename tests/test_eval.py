@@ -23,8 +23,8 @@ def test_compute_metrics_perfect():
     
     assert metrics['mae'] == 0.0
     assert metrics['rmse'] == 0.0
-    assert metrics['spearman_corr'] == 1.0
-    assert metrics['pearson_corr'] == 1.0
+    assert abs(metrics['spearman_corr'] - 1.0) < 1e-10  # Floating point precision
+    assert abs(metrics['pearson_corr'] - 1.0) < 1e-10
 
 
 def test_compute_metrics_errors():
