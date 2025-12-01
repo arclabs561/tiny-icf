@@ -15,11 +15,11 @@ def test_model_output_range_regression():
     model = UniversalICF()
     model.eval()
     
-    # Test with various inputs
+    # Test with various inputs (must be long/int for embedding)
     test_inputs = [
-        torch.randint(0, 256, (1, 20)),
-        torch.zeros(1, 20),
-        torch.ones(1, 20) * 255,
+        torch.randint(0, 256, (1, 20), dtype=torch.long),
+        torch.zeros(1, 20, dtype=torch.long),
+        torch.ones(1, 20, dtype=torch.long) * 255,
     ]
     
     for inp in test_inputs:

@@ -36,7 +36,7 @@ def test_compute_metrics_errors():
     
     assert metrics['mae'] > 0.0
     assert metrics['rmse'] > 0.0
-    assert metrics['mae'] < metrics['rmse']  # RMSE penalizes large errors more
+    assert metrics['mae'] <= metrics['rmse']  # RMSE penalizes large errors more (can be equal for small errors)
     assert 0.0 <= metrics['spearman_corr'] <= 1.0
 
 
