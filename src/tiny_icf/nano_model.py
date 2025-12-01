@@ -1,0 +1,72 @@
+"""Nano-CNN model optimized for speed and size (~6.7k parameters)."""
+
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+
+
+class NanoICF(nn.Module):
+    """
+    Ultra-compact ICF estimator for Rust deployment.
+    
+    Architecture optimized for speed:
+    - Embedding: 256 -> 16 (fits in L1 cache)
+    - Strided Conv1D: stride=2 (50% speedup)
+    - Global Max Pool
+    - Linear head
+    
+    Total: ~6,700 parameters (~25KB)
+    """
+    
+    def __init__(
+        self,
+        vocab_size: int = 256,
+        emb_dim: int = 16,  # Reduced for speed
+        conv_channels: int = 32,
+        kernel_size: int = 5,
+        stride: int = 2,  # Key speedup: skip every other position
+    ):
+        super().__init__()
+        
+        self.emb = nn.Embedding(vocab_size, emb_dim, padding_idx=0)
+        
+        # Strided convolution: stride=2 halves the sequence length
+        # This is the key speed optimization
+        self.conv = nn.Conv1d(
+            emb_dim, 
+            conv_channels, 
+            kernel_size=kernel_size, 
+            stride=stride,
+            padding=kernel_size // 2,  # Maintain output length
+        )
+        
+        # Simple linear head (no hidden layer for speed)
+        self.head = nn.Linear(conv_channels, 1)
+    
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """
+        Args:
+            x: [Batch, Max_Char_Len] byte indices
+        
+        Returns:
+            [Batch, 1] normalized ICF scores
+        """
+        # Embed: [Batch, Len] -> [Batch, Len, Emb]
+        x_emb = self.emb(x)
+        
+        # Transpose for Conv1d: [Batch, Emb, Len]
+        x_emb = x_emb.transpose(1, 2)
+        
+        # Strided convolution: [Batch, Emb, Len] -> [Batch, Channels, Len/2]
+        conv_out = F.relu(self.conv(x_emb))
+        
+        # Global Max Pooling: [Batch, Channels, Len/2] -> [Batch, Channels]
+        pooled = F.max_pool1d(conv_out, conv_out.size(2)).squeeze(2)
+        
+        # Linear head + sigmoid
+        return torch.sigmoid(self.head(pooled))
+    
+    def count_parameters(self) -> int:
+        """Return total number of trainable parameters."""
+        return sum(p.numel() for p in self.parameters() if p.requires_grad)
+

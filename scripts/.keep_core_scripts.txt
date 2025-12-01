@@ -1,0 +1,17 @@
+# Core scripts to keep:
+train_batch.py
+runpod_batch.py
+runpod_utils.py
+validate_trained_model.py
+optimize_training.py
+
+# Experimental/duplicate scripts (can be removed):
+# All auto_start_*.py
+# All mcp_*.py (except if used)
+# All start_*.py (except START_TRAINING.sh if needed)
+# autonomous_train.py
+# quick_*.py
+# final_*.py
+# try_*.py
+# execute_*.py
+

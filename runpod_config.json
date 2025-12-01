@@ -1,0 +1,38 @@
+{
+  "name": "tiny-icf-training",
+  "image": "runpod/pytorch:2.0.1-py3.10-cuda11.8.0-devel",
+  "gpuTypeId": "NVIDIA RTX 3090",
+  "cloudType": "ALL",
+  "networkVolumeId": null,
+  "dockerArgs": "",
+  "volumeInGb": 20,
+  "containerDiskInGb": 10,
+  "minVcpuCount": 2,
+  "minMemoryInGb": 16,
+  "gpuCount": 1,
+  "env": [
+    {
+      "key": "DATA_FILE",
+      "value": "/workspace/data/word_frequency.csv"
+    },
+    {
+      "key": "EPOCHS",
+      "value": "50"
+    },
+    {
+      "key": "BATCH_SIZE",
+      "value": "64"
+    },
+    {
+      "key": "LR",
+      "value": "1e-3"
+    },
+    {
+      "key": "OUTPUT",
+      "value": "/workspace/models/model_runpod.pt"
+    }
+  ],
+  "startJupyter": false,
+  "startSsh": true,
+  "ports": ""
+}

@@ -1,0 +1,38 @@
+[project]
+name = "tiny-icf"
+version = "0.1.0"
+description = "Tiny ICF Model: Compressed character-level model for word commonality estimation"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "torch>=2.0.0",
+    "numpy>=1.24.0",
+    "pandas>=2.0.0",
+    "tqdm>=4.65.0",
+    "scipy>=1.10.0",  # For correlation metrics
+    "lightning>=2.0.0",  # PyTorch Lightning for non-interactive training
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.4.0",
+    "pytest-cov>=4.1.0",
+    "black>=23.0.0",
+    "ruff>=0.1.0",
+]
+embeddings = [
+    "sentence-transformers>=2.2.0",  # For text reduction with real embeddings
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.black]
+line-length = 100
+target-version = ["py310"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+

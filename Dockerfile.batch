@@ -1,0 +1,21 @@
+# Dockerfile for non-interactive batch training on RunPod
+FROM runpod/pytorch:2.1.0-py3.10-cuda11.8.0-devel-ubuntu22.04
+
+# Install uv for fast Python package management
+RUN pip install --no-cache-dir uv
+
+# Set working directory
+WORKDIR /workspace/idf-est
+
+# Copy project files
+COPY . .
+
+# Install dependencies
+RUN uv pip install --system -e .
+
+# Set entrypoint to batch training script
+ENTRYPOINT ["python", "scripts/train_batch.py"]
+
+# Default arguments (can be overridden)
+CMD ["--epochs", "50", "--batch-size", "256"]
+
