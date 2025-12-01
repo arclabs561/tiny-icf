@@ -5,6 +5,7 @@ import torch
 from pathlib import Path
 
 from tiny_icf.model import UniversalICF
+from tiny_icf.eval import evaluate_jabberwocky
 
 
 @pytest.fixture
@@ -46,27 +47,34 @@ def test_jabberwocky_protocol(model_path: str, device: torch.device):
         ("unfriendliness", 0.4, 0.7, "Composed of common parts"),
     ]
     
-    results = []
-    for word, min_icf, max_icf, description in test_cases:
-        # Convert word to bytes
-        byte_seq = word.encode("utf-8")[:20]
-        padded = byte_seq + bytes(20 - len(byte_seq))
-        byte_tensor = torch.tensor(list(padded), dtype=torch.long).unsqueeze(0).to(device)
-        
-        # Predict
-        with torch.no_grad():
-            icf = model(byte_tensor).item()
-        
-        passed = min_icf <= icf <= max_icf
-        results.append((word, icf, passed, description))
+    # Use evaluation function
+    results = evaluate_jabberwocky(model, device, test_cases)
     
     # Report results
-    passed_count = sum(1 for _, _, p, _ in results if p)
-    print(f"\nJabberwocky Protocol Results: {passed_count}/{len(results)} tests passed")
-    for word, icf, passed, desc in results:
-        status = "✓" if passed else "✗"
-        print(f"  {status} {word:20} -> ICF: {icf:.4f} ({desc})")
+    print(f"\nJabberwocky Protocol Results: {results['passed_count']}/{results['total_count']} tests passed")
+    for r in results['results']:
+        status = "✓" if r['passed'] else "✗"
+        print(f"  {status} {r['word']:20} -> ICF: {r['predicted']:.4f} ({r['description']})")
     
     # For untrained model, we expect failures (this is a sanity check)
     # After training, we expect 5/5 to pass
-    assert len(results) == 5, "Should have 5 test cases"
+    assert results['total_count'] == 5, "Should have 5 test cases"
+    assert 0.0 <= results['pass_rate'] <= 1.0, "Pass rate should be in [0, 1]"
+
+
+def test_jabberwocky_with_trained_model(device: torch.device):
+    """Test Jabberwocky Protocol with a trained model (if available)."""
+    model_path = Path("models/model_local_v3.pt")
+    
+    if not model_path.exists():
+        pytest.skip("No trained model available")
+    
+    model = UniversalICF().to(device)
+    model.load_state_dict(torch.load(model_path, map_location=device))
+    model.eval()
+    
+    results = evaluate_jabberwocky(model, device)
+    
+    # After training, we expect at least 3/5 to pass
+    print(f"\nTrained Model Jabberwocky: {results['passed_count']}/{results['total_count']} passed")
+    assert results['pass_rate'] >= 0.4, f"Trained model should pass at least 40% (got {results['pass_rate']:.1%})"
