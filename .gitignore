@@ -19,6 +19,7 @@ wheels/
 *.egg-info/
 .installed.cfg
 *.egg
+.venv/
 
 # Virtual environments
 venv/
@@ -30,20 +31,86 @@ ENV/
 .idea/
 *.swp
 *.swo
+*.sublime-*
 
 # Model files
 *.pt
 *.pth
 *.ckpt
+models/
+weights.json
+weights.bin
+rust/weights.bin
+rust/weights.json
 
-# Data files
+# Data files (use download scripts instead)
 *.csv
 data/
+*.txt
+!README.txt
+!LICENSE.txt
 
 # Logs
 *.log
-
+training*.log
+*.log.*
 
 # Large files
 *.zip
 ..zip
+*.tar.gz
+*.tar
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Temporary/analysis docs (keep core docs)
+*_COMPLETE.md
+*_STATUS.md
+*_SUMMARY.md
+*_ANALYSIS.md
+*_RESULTS.md
+*_FIXES.md
+*_IMPROVEMENTS.md
+*_OPTIMIZATIONS.md
+*_REVIEW.md
+*_THINKING.md
+*_DECISION.md
+*_PLAN.md
+*_SETUP.md
+*_GUIDE.md
+*_REFERENCE.md
+*_USAGE.md
+*_WORKAROUND.md
+*_SOLUTION.md
+*_INSTRUCTIONS.md
+*_COMMAND.md
+ANALYSIS.md
+EXPERIMENT_RESULTS.md
+EXPERIMENTS_*.md
+API_*.md
+RUNPOD_*.md
+MCP_*.md
+START_*.md
+TRAIN_*.md
+TRAINING_*.md
+FINAL_*.md
+ALL_*.md
+WORKING_*.md
+UNIVERSAL_*.md
+DESIGN_*.md
+CODE_*.md
+ARGUMENT_*.md
+AUTO_*.md
+BATCH_*.md
+BETTER_*.md
+HARMONIZATION_*.md
+OPTIMIZATIONS_*.md
+PRODUCT_*.md
+QUICKSTART_*.md
+README_*.md
+!README.md
+RENAME_*.md
+REPO_NAME_*.md
+GITHUB_SETUP.md
