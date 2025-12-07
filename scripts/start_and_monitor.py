@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env -S uv run
 """
 Simple, direct training starter and monitor.
 Uses SSH directly for reliable command execution.

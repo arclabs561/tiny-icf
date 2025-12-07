@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env -S uv run
 """Quick training starter - fast and direct."""
 import subprocess
 import sys

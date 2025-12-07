@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env -S uv run
 """
 Shared utilities for RunPod scripts.
 Harmonized API key extraction and configuration.

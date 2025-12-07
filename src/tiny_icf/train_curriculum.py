@@ -27,43 +27,8 @@ from tiny_icf.model import UniversalICF
 from tiny_icf.typo_augmentation import TypoAwareDataset
 
 
-def generate_ranking_pairs(targets: torch.Tensor, n_pairs: int) -> torch.Tensor:
-    """
-    Generate pairs for ranking loss where target[i] < target[j] (i more common).
-    
-    Args:
-        targets: [Batch, 1] or [Batch] ground truth ICF scores
-        n_pairs: Number of pairs to generate
-    
-    Returns:
-        [N_pairs, 2] tensor of indices (i, j) where target[i] < target[j]
-    """
-    batch_size = len(targets)
-    if batch_size < 2:
-        return torch.empty((0, 2), dtype=torch.long, device=targets.device)
-    
-    pairs = []
-    # Handle both [Batch, 1] and [Batch] shapes
-    if targets.dim() > 1 and targets.size(1) == 1:
-        targets_flat = targets.squeeze(1)  # [Batch]
-    else:
-        targets_flat = targets  # Already [Batch]
-    
-    for _ in range(n_pairs):
-        i, j = torch.randint(0, batch_size, (2,), device=targets.device)
-        if i == j:
-            continue
-        
-        # Ensure i is more common (lower ICF) than j
-        if targets_flat[i] < targets_flat[j]:
-            pairs.append([i.item(), j.item()])
-        elif targets_flat[j] < targets_flat[i]:
-            pairs.append([j.item(), i.item()])
-    
-    if not pairs:
-        return torch.empty((0, 2), dtype=torch.long, device=targets.device)
-    
-    return torch.tensor(pairs, dtype=torch.long, device=targets.device)
+# Import from train.py to use the improved weighted sampling version
+from tiny_icf.train import generate_ranking_pairs
 
 
 def train_epoch(
@@ -85,12 +50,19 @@ def train_epoch(
         optimizer.zero_grad()
         predictions = model(byte_tensors)
         
-        # Generate pairs for ranking loss
-        n_pairs = len(icf_targets) // 2
-        pairs = generate_ranking_pairs(icf_targets, n_pairs)
+        # Generate pairs for ranking loss with weighted sampling
+        n_pairs = min(len(icf_targets), 32)  # More pairs for better ranking learning
+        pairs, pair_diffs = generate_ranking_pairs(
+            icf_targets, n_pairs, min_diff=0.05, use_weighted_sampling=True
+        )
         
-        # Compute loss with ranking pairs
-        loss = criterion(predictions, icf_targets, pairs=pairs)
+        # Compute loss with ranking pairs and smooth rewards
+        loss = criterion(
+            predictions, icf_targets,
+            pairs=pairs,
+            pair_target_diffs=pair_diffs,
+            smooth_ranking=True,
+        )
         loss.backward()
         
         # Gradient clipping for training stability

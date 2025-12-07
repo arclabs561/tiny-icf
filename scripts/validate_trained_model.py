@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env -S uv run
 """
 Validate trained model with comprehensive metrics and Jabberwocky protocol.
 """

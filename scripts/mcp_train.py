@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env -S uv run
 """
 Autonomous training using MCP RunPod tools - fast and direct.
 """

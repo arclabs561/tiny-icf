@@ -87,6 +87,33 @@ class HierarchicalICF(nn.Module):
     def count_parameters(self) -> int:
         """Return total number of trainable parameters."""
         return sum(p.numel() for p in self.parameters() if p.requires_grad)
+    
+    def init_weights(self, mean_icf: float = 0.4):
+        """Initialize model weights with proper strategies."""
+        def init_layer(m):
+            if isinstance(m, nn.Embedding):
+                nn.init.normal_(m.weight, mean=0.0, std=0.1)
+                if m.padding_idx is not None:
+                    nn.init.constant_(m.weight[m.padding_idx], 0.0)
+            elif isinstance(m, nn.Linear):
+                nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
+                if m.bias is not None:
+                    nn.init.constant_(m.bias, 0.0)
+            elif isinstance(m, nn.Conv1d):
+                nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
+                if m.bias is not None:
+                    nn.init.constant_(m.bias, 0.0)
+        
+        self.apply(init_layer)
+        
+        # Initialize final layer bias
+        with torch.no_grad():
+            if hasattr(self.head, '__getitem__'):
+                final_layer = self.head[-1]
+                if isinstance(final_layer, nn.Linear):
+                    final_layer.weight.data *= 0.1
+                    if final_layer.bias is not None:
+                        final_layer.bias.fill_(mean_icf)
 
 
 class BoxEmbeddingICF(nn.Module):
@@ -157,4 +184,31 @@ class BoxEmbeddingICF(nn.Module):
     def count_parameters(self) -> int:
         """Return total number of trainable parameters."""
         return sum(p.numel() for p in self.parameters() if p.requires_grad)
+    
+    def init_weights(self, mean_icf: float = 0.4):
+        """Initialize model weights with proper strategies."""
+        def init_layer(m):
+            if isinstance(m, nn.Embedding):
+                nn.init.normal_(m.weight, mean=0.0, std=0.1)
+                if m.padding_idx is not None:
+                    nn.init.constant_(m.weight[m.padding_idx], 0.0)
+            elif isinstance(m, nn.Linear):
+                nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
+                if m.bias is not None:
+                    nn.init.constant_(m.bias, 0.0)
+            elif isinstance(m, nn.Conv1d):
+                nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
+                if m.bias is not None:
+                    nn.init.constant_(m.bias, 0.0)
+        
+        self.apply(init_layer)
+        
+        # Initialize final layer bias
+        with torch.no_grad():
+            if hasattr(self.head, '__getitem__'):
+                final_layer = self.head[-1]
+                if isinstance(final_layer, nn.Linear):
+                    final_layer.weight.data *= 0.1
+                    if final_layer.bias is not None:
+                        final_layer.bias.fill_(mean_icf)
 

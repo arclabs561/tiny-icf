@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env -S uv run
 """
 RunPod setup script for training Universal ICF model.
 Prepares the environment and training configuration for RunPod GPU instances.

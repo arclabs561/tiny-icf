@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env -S uv run
 """Demo: Optimal text reduction using ICF with real embeddings."""
 
 import sys

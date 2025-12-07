@@ -28,6 +28,7 @@ class IDFDataModule(LightningDataModule):
         multilingual: bool = False,
         include_symbols: bool = True,
         include_emojis: bool = True,
+        return_words: bool = False,  # For distillation: return word strings
     ):
         super().__init__()
         self.save_hyperparameters()
@@ -44,6 +45,7 @@ class IDFDataModule(LightningDataModule):
         self.multilingual = multilingual
         self.include_symbols = include_symbols
         self.include_emojis = include_emojis
+        self.return_words = return_words
         
         self.train_samples = None
         self.val_samples = None
@@ -90,8 +92,12 @@ class IDFDataModule(LightningDataModule):
             
             # Validation set
             self.val_samples = val_samples_raw
+            # Always return words for validation to enable diagnostic analysis
             self.val_dataset = WordICFDataset(
-                self.val_samples, max_length=self.max_length, augment_prob=0.0
+                self.val_samples,
+                max_length=self.max_length,
+                augment_prob=0.0,
+                return_words=True,  # Always return words for diagnostics
             )
     
     def train_dataloader(self):
@@ -109,7 +115,14 @@ class IDFDataModule(LightningDataModule):
             emoji_freq_path=self.emoji_freq_path,
             include_symbols=self.include_symbols,
             include_emojis=self.include_emojis,
+            return_words=self.return_words,
         )
+        
+        # Use custom collate function if returning words
+        collate_fn = None
+        if self.return_words:
+            from tiny_icf.collate_distillation import collate_with_words
+            collate_fn = collate_with_words
         
         return DataLoader(
             train_dataset,
@@ -118,12 +131,17 @@ class IDFDataModule(LightningDataModule):
             num_workers=self.num_workers,
             pin_memory=True,
             persistent_workers=self.num_workers > 0,
+            collate_fn=collate_fn,
         )
     
     def val_dataloader(self):
         """Get validation dataloader."""
         if not self.val_dataset:
             raise RuntimeError("Must call setup('fit') first")
+        
+        # Always use collate_with_words for validation (to enable diagnostics)
+        # The dataset is set to return_words=True in setup()
+        from tiny_icf.collate_distillation import collate_with_words
         
         return DataLoader(
             self.val_dataset,
@@ -132,6 +150,7 @@ class IDFDataModule(LightningDataModule):
             num_workers=self.num_workers,
             pin_memory=True,
             persistent_workers=self.num_workers > 0,
+            collate_fn=collate_with_words,  # Always use to get words for diagnostics
         )
     
     def advance_curriculum(self):

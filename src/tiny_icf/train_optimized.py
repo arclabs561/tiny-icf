@@ -17,6 +17,7 @@ from tiny_icf.data_universal import UniversalICFDataset, load_frequency_list_wit
 from tiny_icf.loss import CombinedLoss
 from tiny_icf.model import UniversalICF
 from tiny_icf.typo_augmentation import TypoAwareDataset
+from tiny_icf.train import generate_ranking_pairs
 
 try:
     from scipy.stats import spearmanr
@@ -38,31 +39,7 @@ def set_seed(seed: int = 42):
         torch.backends.cudnn.benchmark = True  # Faster on CPU
 
 
-def generate_ranking_pairs(targets: torch.Tensor, n_pairs: int) -> torch.Tensor:
-    """Generate pairs for ranking loss."""
-    batch_size = len(targets)
-    if batch_size < 2:
-        return torch.empty((0, 2), dtype=torch.long, device=targets.device)
-    
-    pairs = []
-    if targets.dim() > 1 and targets.size(1) == 1:
-        targets_flat = targets.squeeze(1)
-    else:
-        targets_flat = targets
-    
-    for _ in range(n_pairs):
-        i, j = torch.randint(0, batch_size, (2,), device=targets.device)
-        if i == j:
-            continue
-        if targets_flat[i] < targets_flat[j]:
-            pairs.append([i.item(), j.item()])
-        elif targets_flat[j] < targets_flat[i]:
-            pairs.append([j.item(), i.item()])
-    
-    if not pairs:
-        return torch.empty((0, 2), dtype=torch.long, device=targets.device)
-    
-    return torch.tensor(pairs, dtype=torch.long, device=targets.device)
+# generate_ranking_pairs imported from train.py
 
 
 def train_epoch(
@@ -88,9 +65,17 @@ def train_epoch(
         # Mixed precision forward pass
         with autocast(enabled=use_amp):
             predictions = model(byte_tensors)
-            n_pairs = len(icf_targets) // 2
-            pairs = generate_ranking_pairs(icf_targets, n_pairs)
-            loss = criterion(predictions, icf_targets, pairs=pairs)
+            # Generate pairs for ranking loss with weighted sampling
+            n_pairs = min(len(icf_targets), 32)  # More pairs for better ranking learning
+            pairs, pair_diffs = generate_ranking_pairs(
+                icf_targets, n_pairs, min_diff=0.05, use_weighted_sampling=True
+            )
+            loss = criterion(
+                predictions, icf_targets,
+                pairs=pairs,
+                pair_target_diffs=pair_diffs,
+                smooth_ranking=True,
+            )
         
         # Mixed precision backward pass
         if use_amp:
@@ -134,8 +119,15 @@ def validate(
             with autocast(enabled=use_amp):
                 predictions = model(byte_tensors)
                 n_pairs = len(icf_targets) // 2
-                pairs = generate_ranking_pairs(icf_targets, n_pairs)
-                loss = criterion(predictions, icf_targets, pairs=pairs)
+                pairs, pair_diffs = generate_ranking_pairs(
+                    icf_targets, n_pairs, min_diff=0.05, use_weighted_sampling=True
+                )
+                loss = criterion(
+                    predictions, icf_targets,
+                    pairs=pairs,
+                    pair_target_diffs=pair_diffs,
+                    smooth_ranking=True,
+                )
             
             total_loss += loss.item()
             n_batches += 1

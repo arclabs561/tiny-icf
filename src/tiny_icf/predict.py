@@ -2,10 +2,14 @@
 
 import argparse
 from pathlib import Path
+from typing import Optional
 
+import numpy as np
 import torch
 
 from tiny_icf.model import UniversalICF
+from tiny_icf.language_detection import detect_languages, format_languages
+from tiny_icf.temporal_detection import estimate_usage_period, format_temporal_analysis
 
 
 def word_to_bytes(word: str, max_length: int = 20) -> torch.Tensor:
@@ -34,14 +38,95 @@ def word_to_bytes(word: str, max_length: int = 20) -> torch.Tensor:
     return torch.tensor(list(padded), dtype=torch.long).unsqueeze(0)
 
 
-def predict_icf(model: UniversalICF, word: str, device: torch.device) -> float:
-    """Predict ICF score for a single word."""
+def predict_icf(
+    model: UniversalICF, 
+    word: str, 
+    device: torch.device,
+    return_details: bool = False,
+    reference_scores: Optional[np.ndarray] = None,
+) -> float | dict:
+    """
+    Predict ICF score for a single word.
+    
+    Args:
+        model: Trained UniversalICF model
+        word: Word to predict ICF for
+        device: Device for computation
+        return_details: If True, return dict with score, interpretation, confidence, etc.
+    
+    Returns:
+        If return_details=False: float ICF score
+        If return_details=True: dict with keys:
+            - 'icf_score': float ICF score (0.0=common, 1.0=rare)
+            - 'interpretation': str category (Very Common, Common, Rare, Very Rare)
+            - 'confidence': float confidence estimate (0.0-1.0)
+            - 'raw_output': float raw model output before clamping
+            - 'category': str one of 'very_common', 'common', 'rare', 'very_rare'
+    """
     model.eval()
     byte_tensor = word_to_bytes(word).to(device)
     
     with torch.no_grad():
-        prediction = model(byte_tensor)
-        return prediction.item()
+        # Try to get features if model supports it
+        try:
+            if return_details:
+                prediction, features = model(byte_tensor, return_features=True)
+                # prediction is [1, 1] tensor, extract scalar
+                icf_score = float(prediction.squeeze().item())
+                raw_output = float(features.get('raw_output', prediction).squeeze().item())
+                confidence = float(features.get('confidence', torch.tensor(0.5)).squeeze().item())
+            else:
+                prediction = model(byte_tensor)
+                icf_score = float(prediction.squeeze().item())
+                raw_output = None
+                confidence = None
+        except (TypeError, IndexError, AttributeError):
+            # Model doesn't support return_features, use basic prediction
+            prediction = model(byte_tensor)
+            icf_score = float(prediction.squeeze().item())
+            raw_output = icf_score
+            confidence = 0.5  # Default confidence
+    
+    if not return_details:
+        return icf_score
+    
+    # Determine interpretation
+    if icf_score < 0.2:
+        interpretation = "Very Common (stopword-like)"
+        category = "very_common"
+    elif icf_score < 0.5:
+        interpretation = "Common"
+        category = "common"
+    elif icf_score < 0.8:
+        interpretation = "Rare"
+        category = "rare"
+    else:
+        interpretation = "Very Rare/Unique"
+        category = "very_rare"
+    
+    result = {
+        'icf_score': icf_score,
+        'interpretation': interpretation,
+        'category': category,
+        'confidence': confidence if confidence is not None else 0.5,
+        'raw_output': raw_output if raw_output is not None else icf_score,
+        'word': word,
+    }
+    
+    # Add percentile rank if reference scores provided
+    if reference_scores is not None and len(reference_scores) > 0:
+        percentile = (reference_scores <= icf_score).sum() / len(reference_scores) * 100.0
+        result['percentile_rank'] = float(percentile)
+    
+    # Add language detection
+    languages = detect_languages(word, method='combined')
+    result['languages'] = format_languages(languages, top_k=3)
+    
+    # Add temporal/era detection
+    temporal = estimate_usage_period(word, icf_score=icf_score)
+    result['temporal'] = format_temporal_analysis(temporal)
+    
+    return result
 
 
 def main():
@@ -54,6 +139,8 @@ def main():
         help="Words to predict (space-separated string or single word)",
     )
     parser.add_argument("--device", type=str, default="auto", help="Device (cuda/cpu/auto)")
+    parser.add_argument("--detailed", action="store_true", help="Return detailed predictions with confidence")
+    parser.add_argument("--json", action="store_true", help="Output as JSON")
     
     args = parser.parse_args()
     
@@ -72,21 +159,39 @@ def main():
     words = args.words.split() if isinstance(args.words, str) else args.words
     
     # Predict
-    print(f"{'Word':<20} {'ICF Score':<12} {'Interpretation':<30}")
-    print("-" * 80)
-    
+    results = []
     for word in words:
-        score = predict_icf(model, word, device)
-        if score < 0.2:
-            interpretation = "Very Common (stopword-like)"
-        elif score < 0.5:
-            interpretation = "Common"
-        elif score < 0.8:
-            interpretation = "Rare"
+        if args.detailed or args.json:
+            result = predict_icf(model, word, device, return_details=True)
+            results.append(result)
         else:
-            interpretation = "Very Rare/Unique"
-        
-        print(f"{word:<20} {score:<12.4f} {interpretation:<30}")
+            score = predict_icf(model, word, device, return_details=False)
+            result = {
+                'word': word,
+                'icf_score': score,
+                'interpretation': (
+                    "Very Common (stopword-like)" if score < 0.2 else
+                    "Common" if score < 0.5 else
+                    "Rare" if score < 0.8 else
+                    "Very Rare/Unique"
+                ),
+            }
+            results.append(result)
+    
+    # Output
+    if args.json:
+        import json
+        print(json.dumps(results, indent=2))
+    elif args.detailed:
+        print(f"{'Word':<20} {'ICF Score':<12} {'Confidence':<12} {'Interpretation':<30}")
+        print("-" * 80)
+        for result in results:
+            print(f"{result['word']:<20} {result['icf_score']:<12.4f} {result['confidence']:<12.4f} {result['interpretation']:<30}")
+    else:
+        print(f"{'Word':<20} {'ICF Score':<12} {'Interpretation':<30}")
+        print("-" * 80)
+        for result in results:
+            print(f"{result['word']:<20} {result['icf_score']:<12.4f} {result['interpretation']:<30}")
 
 
 if __name__ == "__main__":

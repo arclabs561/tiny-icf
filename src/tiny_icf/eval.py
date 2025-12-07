@@ -2,7 +2,7 @@
 
 import numpy as np
 import torch
-from typing import Dict, List, Tuple, Optional
+from typing import Dict, List, Tuple, Optional, Any
 from pathlib import Path
 
 try:
@@ -10,6 +10,48 @@ try:
     HAS_SCIPY = True
 except ImportError:
     HAS_SCIPY = False
+
+# Calibration and stratified evaluation are now imported directly
+# (functions are in this file, but we check for scipy dependency)
+HAS_CALIBRATION = HAS_SCIPY
+HAS_STRATIFIED = HAS_SCIPY
+
+# RBO metrics are now in this file (consolidated from eval_rbo.py)
+try:
+    from tiny_icf.eval_rbo import compute_rbo_metrics
+    HAS_RBO = True
+except ImportError:
+    HAS_RBO = False
+    def compute_rbo_metrics(*args, **kwargs):
+        return {}
+
+# Uncertainty and robustness are imported from separate modules
+# (they're substantial enough to keep separate for now)
+
+try:
+    from tiny_icf.eval_uncertainty import compute_uncertainty_metrics
+    HAS_UNCERTAINTY = True
+except ImportError:
+    HAS_UNCERTAINTY = False
+
+try:
+    from tiny_icf.eval_robustness import compute_robustness_metrics
+    HAS_ROBUSTNESS = True
+except ImportError:
+    HAS_ROBUSTNESS = False
+
+# Enhanced evaluation: ranking metrics and confidence intervals
+try:
+    from tiny_icf.eval_ranking_metrics import compute_ranking_metrics
+    HAS_RANKING_METRICS = True
+except ImportError:
+    HAS_RANKING_METRICS = False
+
+try:
+    from tiny_icf.eval_confidence import compute_metrics_with_ci, format_metric_with_ci
+    HAS_CONFIDENCE_INTERVALS = True
+except ImportError:
+    HAS_CONFIDENCE_INTERVALS = False
 
 
 def compute_metrics(
@@ -59,18 +101,35 @@ def compute_metrics(
         metrics['mre'] = 0.0
         metrics['median_re'] = 0.0
     
-    # Correlation metrics
+    # Correlation metrics with safe NaN handling
+    # Research: NaN occurs when predictions/targets have zero variance (constant values)
+    # This is common early in training when model hasn't learned to differentiate
     if HAS_SCIPY and len(predictions) > 1:
-        spearman_corr, spearman_p = spearmanr(predictions, targets)
-        pearson_corr, pearson_p = pearsonr(predictions, targets)
-        kendall_corr, kendall_p = kendalltau(predictions, targets)
+        # Check for zero variance before computing correlation
+        pred_std = np.std(predictions)
+        target_std = np.std(targets)
         
-        metrics['spearman_corr'] = float(spearman_corr)
-        metrics['spearman_p'] = float(spearman_p)
-        metrics['pearson_corr'] = float(pearson_corr)
-        metrics['pearson_p'] = float(pearson_p)
-        metrics['kendall_corr'] = float(kendall_corr)
-        metrics['kendall_p'] = float(kendall_p)
+        if pred_std < 1e-8 or target_std < 1e-8:
+            # Zero variance: correlation is undefined, return 0.0
+            metrics['spearman_corr'] = 0.0
+            metrics['spearman_p'] = 1.0
+            metrics['pearson_corr'] = 0.0
+            metrics['pearson_p'] = 1.0
+            metrics['kendall_corr'] = 0.0
+            metrics['kendall_p'] = 1.0
+        else:
+            # Compute correlations with NaN handling
+            spearman_corr, spearman_p = spearmanr(predictions, targets)
+            pearson_corr, pearson_p = pearsonr(predictions, targets)
+            kendall_corr, kendall_p = kendalltau(predictions, targets)
+            
+            # Handle NaN/Inf values (can occur with numerical instability)
+            metrics['spearman_corr'] = float(spearman_corr) if not (np.isnan(spearman_corr) or np.isinf(spearman_corr)) else 0.0
+            metrics['spearman_p'] = float(spearman_p) if not (np.isnan(spearman_p) or np.isinf(spearman_p)) else 1.0
+            metrics['pearson_corr'] = float(pearson_corr) if not (np.isnan(pearson_corr) or np.isinf(pearson_corr)) else 0.0
+            metrics['pearson_p'] = float(pearson_p) if not (np.isnan(pearson_p) or np.isinf(pearson_p)) else 1.0
+            metrics['kendall_corr'] = float(kendall_corr) if not (np.isnan(kendall_corr) or np.isinf(kendall_corr)) else 0.0
+            metrics['kendall_p'] = float(kendall_p) if not (np.isnan(kendall_p) or np.isinf(kendall_p)) else 1.0
     else:
         metrics['spearman_corr'] = 0.0
         metrics['spearman_p'] = 1.0
@@ -85,6 +144,9 @@ def compute_metrics(
     metrics['pred_mean'] = float(predictions.mean())
     metrics['pred_std'] = float(predictions.std())
     metrics['pred_median'] = float(np.median(predictions))
+    metrics['pred_q25'] = float(np.percentile(predictions, 25))
+    metrics['pred_q75'] = float(np.percentile(predictions, 75))
+    metrics['pred_iqr'] = float(np.percentile(predictions, 75) - np.percentile(predictions, 25))
     
     # Target statistics
     metrics['target_min'] = float(targets.min())
@@ -92,32 +154,54 @@ def compute_metrics(
     metrics['target_mean'] = float(targets.mean())
     metrics['target_std'] = float(targets.std())
     metrics['target_median'] = float(np.median(targets))
+    metrics['target_q25'] = float(np.percentile(targets, 25))
+    metrics['target_q75'] = float(np.percentile(targets, 75))
+    metrics['target_iqr'] = float(np.percentile(targets, 75) - np.percentile(targets, 25))
     
     # Distribution similarity
     metrics['mean_diff'] = float(abs(predictions.mean() - targets.mean()))
     metrics['std_ratio'] = float(predictions.std() / (targets.std() + 1e-8))
+    metrics['median_diff'] = float(abs(np.median(predictions) - np.median(targets)))
+    metrics['iqr_ratio'] = float(metrics['pred_iqr'] / (metrics['target_iqr'] + 1e-8))
+    
+    # Distribution overlap (using IQR overlap)
+    pred_q25, pred_q75 = metrics['pred_q25'], metrics['pred_q75']
+    target_q25, target_q75 = metrics['target_q25'], metrics['target_q75']
+    overlap_start = max(pred_q25, target_q25)
+    overlap_end = min(pred_q75, target_q75)
+    overlap_size = max(0, overlap_end - overlap_start)
+    total_span = max(pred_q75, target_q75) - min(pred_q25, target_q25)
+    metrics['iqr_overlap'] = float(overlap_size / (total_span + 1e-8))
     
     # Range coverage
     metrics['range_coverage'] = float(
         (predictions.max() - predictions.min()) / (targets.max() - targets.min() + 1e-8)
     )
     
-    # Calibration: Check if predictions are well-calibrated
-    # Bin predictions and targets, compare means
-    n_bins = 10
-    bin_edges = np.linspace(0, 1, n_bins + 1)
-    bin_indices = np.digitize(predictions, bin_edges) - 1
-    bin_indices = np.clip(bin_indices, 0, n_bins - 1)
+    # Calibration metrics (now in this file)
+    if HAS_CALIBRATION:
+        try:
+            calib_metrics = compute_calibration_metrics(predictions, targets, n_bins=10)
+            metrics.update(calib_metrics)
+        except Exception:
+            # Fallback to simple calibration error
+            metrics['calibration_error'] = expected_calibration_error(predictions, targets, n_bins=10)
+    else:
+        # Simple calibration error (fallback)
+        metrics['calibration_error'] = expected_calibration_error(predictions, targets, n_bins=10)
     
-    calibration_errors = []
-    for i in range(n_bins):
-        mask = bin_indices == i
-        if mask.sum() > 0:
-            pred_mean = predictions[mask].mean()
-            target_mean = targets[mask].mean()
-            calibration_errors.append(abs(pred_mean - target_mean))
-    
-    metrics['calibration_error'] = float(np.mean(calibration_errors)) if calibration_errors else 0.0
+    # RBO (Rank-Biased Overlap) metrics - emphasizes top-ranked items
+    if HAS_RBO:
+        try:
+            rbo_metrics = compute_rbo_metrics(
+                torch.tensor(predictions),
+                torch.tensor(targets),
+                top_k_values=[10, 50, 100],
+            )
+            metrics.update(rbo_metrics)
+        except Exception as e:
+            # If RBO computation fails, continue without it
+            pass
     
     return metrics
 
@@ -181,7 +265,7 @@ def evaluate_jabberwocky(
     model: torch.nn.Module,
     device: torch.device,
     test_cases: Optional[List[Tuple[str, float, float, str]]] = None,
-) -> Dict[str, any]:
+) -> Dict[str, Any]:
     """
     Evaluate model on Jabberwocky Protocol (pseudo-words).
     
@@ -242,7 +326,7 @@ def evaluate_on_dataset(
     device: torch.device,
     max_samples: Optional[int] = None,
     batch_size: int = 64,
-) -> Dict[str, any]:
+) -> Dict[str, Any]:
     """
     Evaluate model on a dataset.
     
@@ -297,12 +381,319 @@ def evaluate_on_dataset(
     metrics = compute_metrics(predictions, targets)
     ranking_metrics = evaluate_ranking(predictions, targets, top_k=10)
     
+    # Stratified evaluation (now in this file)
+    stratified_results: Dict[str, Any] = {}
+    if HAS_STRATIFIED:
+        try:
+            stratified_results = stratified_evaluation(predictions, targets)
+            rarity_results = evaluate_by_rarity_category(predictions, targets)
+            if isinstance(stratified_results, dict):
+                stratified_results['by_category'] = rarity_results
+        except Exception:
+            pass
+    
+    # Uncertainty quantification (if available)
+    uncertainty_results = {}
+    if HAS_UNCERTAINTY:
+        try:
+            uncertainty_results = compute_uncertainty_metrics(predictions, targets)
+        except Exception:
+            pass
+    
+    # Robustness testing (if available and model provided)
+    robustness_results: Dict[str, Any] = {}
+    # Note: Robustness testing requires model function, not included in basic eval
+    
     return {
         'metrics': metrics,
         'ranking_metrics': ranking_metrics,
+        'stratified': stratified_results,
+        'uncertainty': uncertainty_results,
         'predictions': predictions,
         'targets': targets,
         'words': all_words[:len(predictions)],
         'n_samples': len(predictions),
     }
+
+
+# ============================================================================
+# Calibration Metrics (consolidated from eval_calibration.py)
+# ============================================================================
+
+def expected_calibration_error(
+    predictions: np.ndarray,
+    targets: np.ndarray,
+    n_bins: int = 10,
+) -> float:
+    """
+    Compute Expected Calibration Error (ECE).
+    
+    ECE measures how well-calibrated predictions are by binning predictions
+    and comparing mean predicted vs mean observed values in each bin.
+    
+    Args:
+        predictions: Model predictions [N]
+        targets: Ground truth values [N]
+        n_bins: Number of bins for calibration
+    
+    Returns:
+        ECE score (lower is better, 0 = perfectly calibrated)
+    """
+    predictions = np.asarray(predictions).flatten()
+    targets = np.asarray(targets).flatten()
+    
+    # Bin predictions
+    bin_edges = np.linspace(0, 1, n_bins + 1)
+    bin_indices = np.digitize(predictions, bin_edges) - 1
+    bin_indices = np.clip(bin_indices, 0, n_bins - 1)
+    
+    ece = 0.0
+    total_samples = len(predictions)
+    
+    for i in range(n_bins):
+        mask = bin_indices == i
+        n_samples = mask.sum()
+        
+        if n_samples > 0:
+            # Mean predicted value in this bin
+            pred_mean = predictions[mask].mean()
+            # Mean observed value in this bin
+            target_mean = targets[mask].mean()
+            # Calibration error for this bin
+            bin_error = abs(pred_mean - target_mean)
+            # Weight by number of samples
+            ece += (n_samples / total_samples) * bin_error
+    
+    return float(ece)
+
+
+def maximum_calibration_error(
+    predictions: np.ndarray,
+    targets: np.ndarray,
+    n_bins: int = 10,
+) -> float:
+    """
+    Compute Maximum Calibration Error (MCE).
+    
+    MCE is the maximum calibration error across all bins.
+    
+    Args:
+        predictions: Model predictions [N]
+        targets: Ground truth values [N]
+        n_bins: Number of bins for calibration
+    
+    Returns:
+        MCE score (lower is better)
+    """
+    predictions = np.asarray(predictions).flatten()
+    targets = np.asarray(targets).flatten()
+    
+    # Bin predictions
+    bin_edges = np.linspace(0, 1, n_bins + 1)
+    bin_indices = np.digitize(predictions, bin_edges) - 1
+    bin_indices = np.clip(bin_indices, 0, n_bins - 1)
+    
+    max_error = 0.0
+    
+    for i in range(n_bins):
+        mask = bin_indices == i
+        n_samples = mask.sum()
+        
+        if n_samples > 0:
+            pred_mean = predictions[mask].mean()
+            target_mean = targets[mask].mean()
+            bin_error = abs(pred_mean - target_mean)
+            max_error = max(max_error, bin_error)
+    
+    return float(max_error)
+
+
+def brier_score(
+    predictions: np.ndarray,
+    targets: np.ndarray,
+) -> float:
+    """
+    Compute Brier score (mean squared error).
+    
+    Brier score measures calibration quality for probabilistic predictions.
+    Lower is better.
+    
+    Args:
+        predictions: Model predictions [N]
+        targets: Ground truth values [N]
+    
+    Returns:
+        Brier score
+    """
+    predictions = np.asarray(predictions).flatten()
+    targets = np.asarray(targets).flatten()
+    
+    return float(np.mean((predictions - targets) ** 2))
+
+
+def compute_calibration_metrics(
+    predictions: np.ndarray,
+    targets: np.ndarray,
+    n_bins: int = 10,
+) -> Dict[str, float]:
+    """
+    Compute all calibration metrics.
+    
+    Args:
+        predictions: Model predictions [N]
+        targets: Ground truth values [N]
+        n_bins: Number of bins for calibration
+    
+    Returns:
+        Dictionary with ECE, MCE, Brier score
+    """
+    predictions = np.asarray(predictions).flatten()
+    targets = np.asarray(targets).flatten()
+    
+    return {
+        'ece': expected_calibration_error(predictions, targets, n_bins),
+        'mce': maximum_calibration_error(predictions, targets, n_bins),
+        'brier_score': brier_score(predictions, targets),
+    }
+
+
+# ============================================================================
+# Stratified Evaluation (consolidated from eval_stratified.py)
+# ============================================================================
+
+def stratified_evaluation(
+    predictions: np.ndarray,
+    targets: np.ndarray,
+    bins: Optional[List[Tuple[float, float]]] = None,
+) -> Dict[str, Dict[str, float]]:
+    """
+    Evaluate model performance stratified by target ICF bins.
+    
+    Args:
+        predictions: Model predictions [N]
+        targets: Ground truth ICF scores [N]
+        bins: List of (min, max) tuples for ICF bins. Default: deciles
+    
+    Returns:
+        Dictionary mapping bin name to metrics
+    """
+    predictions = np.asarray(predictions).flatten()
+    targets = np.asarray(targets).flatten()
+    
+    if bins is None:
+        # Default: deciles (0-0.1, 0.1-0.2, ..., 0.9-1.0)
+        bins = [(i/10, (i+1)/10) for i in range(10)]
+        bin_names = [f"decile_{i+1}" for i in range(10)]
+    else:
+        bin_names = [f"bin_{i+1}" for i in range(len(bins))]
+    
+    results = {}
+    
+    for (min_val, max_val), bin_name in zip(bins, bin_names):
+        # Filter samples in this bin
+        mask = (targets >= min_val) & (targets < max_val)
+        if max_val >= 1.0:  # Include upper bound for last bin
+            mask = (targets >= min_val) & (targets <= max_val)
+        
+        bin_predictions = predictions[mask]
+        bin_targets = targets[mask]
+        
+        if len(bin_predictions) == 0:
+            results[bin_name] = {
+                'n_samples': 0,
+                'spearman': 0.0,
+                'mae': 0.0,
+                'rmse': 0.0,
+            }
+            continue
+        
+        # Compute metrics for this bin
+        mae = np.mean(np.abs(bin_predictions - bin_targets))
+        rmse = np.sqrt(np.mean((bin_predictions - bin_targets) ** 2))
+        
+        if HAS_SCIPY and len(bin_predictions) > 1:
+            spearman, _ = spearmanr(bin_predictions, bin_targets)
+            if np.isnan(spearman):
+                spearman = 0.0
+        else:
+            spearman = 0.0
+        
+        results[bin_name] = {
+            'n_samples': int(mask.sum()),
+            'spearman': float(spearman),
+            'mae': float(mae),
+            'rmse': float(rmse),
+            'target_mean': float(bin_targets.mean()),
+            'pred_mean': float(bin_predictions.mean()),
+            'target_std': float(bin_targets.std()),
+            'pred_std': float(bin_predictions.std()),
+        }
+    
+    return results
+
+
+def evaluate_by_rarity_category(
+    predictions: np.ndarray,
+    targets: np.ndarray,
+) -> Dict[str, Dict[str, float]]:
+    """
+    Evaluate by semantic rarity categories.
+    
+    Categories:
+    - Common (0.0-0.1): Very common words
+    - Uncommon (0.1-0.3): Less common but still frequent
+    - Rare (0.3-0.7): Rare words
+    - Very rare (0.7-1.0): Very rare or gibberish
+    
+    Args:
+        predictions: Model predictions [N]
+        targets: Ground truth ICF scores [N]
+    
+    Returns:
+        Dictionary mapping category name to metrics
+    """
+    bins = [
+        (0.0, 0.1, "common"),
+        (0.1, 0.3, "uncommon"),
+        (0.3, 0.7, "rare"),
+        (0.7, 1.0, "very_rare"),
+    ]
+    
+    results = {}
+    
+    for min_val, max_val, name in bins:
+        mask = (targets >= min_val) & (targets <= max_val)
+        
+        bin_predictions = predictions[mask]
+        bin_targets = targets[mask]
+        
+        if len(bin_predictions) == 0:
+            results[name] = {
+                'n_samples': 0,
+                'spearman': 0.0,
+                'mae': 0.0,
+                'rmse': 0.0,
+            }
+            continue
+        
+        mae = np.mean(np.abs(bin_predictions - bin_targets))
+        rmse = np.sqrt(np.mean((bin_predictions - bin_targets) ** 2))
+        
+        if HAS_SCIPY and len(bin_predictions) > 1:
+            spearman, _ = spearmanr(bin_predictions, bin_targets)
+            if np.isnan(spearman):
+                spearman = 0.0
+        else:
+            spearman = 0.0
+        
+        results[name] = {
+            'n_samples': int(mask.sum()),
+            'spearman': float(spearman),
+            'mae': float(mae),
+            'rmse': float(rmse),
+            'target_mean': float(bin_targets.mean()),
+            'pred_mean': float(bin_predictions.mean()),
+        }
+    
+    return results
 

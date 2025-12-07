@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env -S uv run
 """
 Non-interactive RunPod batch training orchestration.
 Creates pod, uploads code, runs training, downloads results, stops pod.

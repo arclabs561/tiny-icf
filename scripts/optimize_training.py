@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env -S uv run
 """
 Training optimization utilities:
 - Find best GPU for cost/performance

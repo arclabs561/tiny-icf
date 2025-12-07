@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env -S uv run
 """
 Quick RunPod setup using API key from MCP config.
 Creates pod, uploads files, and starts training.

@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env -S uv run
 """Monitor training progress and test predictions periodically."""
 
 import sys

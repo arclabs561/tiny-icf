@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env -S uv run
 """Quick test of model predictions vs expected values."""
 
 import sys

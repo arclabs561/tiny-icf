@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env -S uv run
 """Download and process Google Books Ngram data for training."""
 
 import sys

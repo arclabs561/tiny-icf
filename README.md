@@ -1,42 +1,46 @@
-# tiny-icf: Tiny ICF Model
+# Tiny ICF: Compressed Character-Level Word Frequency Estimation
 
-A highly compressed, character-level model that predicts normalized ICF (Inverse Collection Frequency) for arbitrary words. The model learns the statistical structure of word commonality from character-level features, satisfying Kolmogorov complexity constraints.
+A tiny neural network (<50k parameters) that predicts word frequency (ICF) from character patterns, enabling zero-shot token filtering and weighting without massive dictionaries.
 
-## Core Concept
-
-Instead of storing a massive frequency dictionary, this model learns to predict word commonality from:
-- Byte-level character sequences
-- Morphological patterns (prefixes, suffixes, roots)
-- Structural validity (English phonotactics)
-
-**Target**: Normalized ICF score where `1.0 = rare/unique` and `0.0 = stopword`
-
-## Architecture
-
-- **Input**: UTF-8 bytes (0-255)
-- **Encoder**: Parallel 1D CNNs (kernel sizes 3, 5, 7) for morphological n-grams
-- **Parameters**: < 50k (fits in L2 cache)
-- **Output**: Sigmoid-normalized ICF (0.0 to 1.0)
-
-## Usage
+## Quick Start
 
 ```bash
-# Train on frequency list
-python -m tiny_icf.train --data path/to/frequencies.csv --epochs 50
+# Install dependencies
+uv sync
 
-# Predict ICF for words
-python -m tiny_icf.predict --words "the apple xylophone qzxbjk"
+# Train a model
+uv run python -m tiny_icf.train --data data/word_frequency.csv
 
-# Run Jabberwocky Protocol validation
-pytest tests/test_jabberwocky.py
+# Predict ICF scores
+uv run python -m tiny_icf.predict --model models/model.pt --words "the xylophone qzxbjk"
 ```
 
-## Validation: Jabberwocky Protocol
+## Features
 
-The model must correctly predict scores for non-existent words:
-- `"the"` → ~0.0 (common)
-- `"xylophone"` → ~0.9 (rare but valid)
-- `"flimjam"` → ~0.6-0.8 (rare, looks English)
-- `"qzxbjk"` → ~0.99 (impossible structure)
-- `"unfriendliness"` → ~0.4-0.6 (composed of common parts)
+- **Tiny**: <50k parameters (~160 KB)
+- **Fast**: <1ms inference per word
+- **Universal**: Works with any UTF-8 language
+- **Generalizes**: Handles unseen words, typos, neologisms
+- **Multi-task**: ICF prediction, language detection, temporal analysis, text reduction
+
+## Documentation
+
+See `docs/` for detailed documentation:
+- `PROJECT_OVERVIEW.md` - What we're building and why
+- `TECHNICAL_MATHEMATICAL_DESCRIPTION.md` - Mathematical formulation
+- `INFORMATION_THEORETIC_CONSTRAINTS.md` - Kolmogorov complexity analysis
+- `ALL_TASKS_STRUCTURE_ANALYSIS.md` - Analysis of all tasks
+
+## Tasks
+
+1. **ICF Prediction**: word → ICF score (0.0=common, 1.0=rare)
+2. **Text Reduction**: Optimize word dropping to minimize embedding regret
+3. **Temporal ICF**: Predict ICF across decades (1800s, 1900s, 2000s)
+4. **Language Detection**: Detect language from character patterns
+5. **Era Classification**: Classify historical era (archaic, modern, contemporary)
+6. **Multi-Task**: Unified model for all tasks with AMOO
+
+## License
+
+MIT
 

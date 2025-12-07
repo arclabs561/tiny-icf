@@ -1,149 +1,168 @@
-"""Analyze training progress from log file."""
+# /// script
+# requires-python = ">=3.10"
+# dependencies = [
+#   "numpy>=1.24.0",
+#   "pandas>=2.0.0",
+#   "matplotlib>=3.7.0",
+# ]
+# ///
+"""Analyze and visualize training progress from history files."""
 
-import re
+import json
+import sys
 from pathlib import Path
-from collections import defaultdict
+from typing import Dict, List, Optional
 
+import numpy as np
+import pandas as pd
+import matplotlib
+matplotlib.use('Agg')
+import matplotlib.pyplot as plt
 
-def parse_training_log(log_path: Path):
-    """Parse training log and extract metrics."""
-    epochs = []
-    current_epoch = None
+def load_history(history_path: Path) -> Optional[Dict]:
+    """Load training history."""
+    if not history_path.exists():
+        return None
+    try:
+        return json.load(open(history_path))
+    except Exception as e:
+        print(f"Error loading {history_path}: {e}")
+        return None
+
+def analyze_experiment(name: str, history: Dict) -> Dict:
+    """Analyze a single experiment."""
+    train_spearman = [e.get('spearman_corr', e.get('spearman', 0)) for e in history.get('train', [])]
+    val_spearman = [e.get('spearman_corr', e.get('spearman', 0)) for e in history.get('val', [])]
     
-    with open(log_path, 'r') as f:
-        for line in f:
-            # Epoch line
-            epoch_match = re.search(r'Epoch (\d+)/(\d+)', line)
-            if epoch_match:
-                epoch_num = int(epoch_match.group(1))
-                total_epochs = int(epoch_match.group(2))
-                current_epoch = {
-                    'epoch': epoch_num,
-                    'total': total_epochs,
-                    'stage': None,
-                    'progress': None,
-                    'train_loss': None,
-                    'val_loss': None,
-                    'saved': False,
-                }
-            
-            # Stage progress
-            if current_epoch and 'Stage' in line:
-                stage_match = re.search(r'Stage (\d+)/(\d+)', line)
-                if stage_match:
-                    current_epoch['stage'] = int(stage_match.group(1))
-                    current_epoch['total_stages'] = int(stage_match.group(2))
-                
-                progress_match = re.search(r'(\d+\.\d+)% progress', line)
-                if progress_match:
-                    current_epoch['progress'] = float(progress_match.group(1))
-            
-            # Loss values
-            if current_epoch and 'loss' in line.lower():
-                train_match = re.search(r'Train loss: ([\d.]+)', line)
-                if train_match:
-                    current_epoch['train_loss'] = float(train_match.group(1))
-                
-                val_match = re.search(r'Val loss: ([\d.]+)', line)
-                if val_match:
-                    current_epoch['val_loss'] = float(val_match.group(1))
-            
-            # Saved model
-            if current_epoch and 'Saved best model' in line:
-                current_epoch['saved'] = True
-                epochs.append(current_epoch.copy())
-                current_epoch = None
-            
-            # Training complete
-            if 'Training complete' in line:
-                complete_match = re.search(r'Best validation loss: ([\d.]+)', line)
-                if complete_match:
-                    return {
-                        'complete': True,
-                        'best_val_loss': float(complete_match.group(1)),
-                        'epochs': epochs,
-                    }
+    if not train_spearman or not val_spearman:
+        return None
+    
+    gaps = [t - v for t, v in zip(train_spearman, val_spearman)]
+    best_val_idx = val_spearman.index(max(val_spearman))
     
     return {
-        'complete': False,
-        'current_epoch': current_epoch,
-        'epochs': epochs,
+        'name': name,
+        'epochs': len(train_spearman),
+        'best_val': max(val_spearman),
+        'best_val_epoch': best_val_idx + 1,
+        'final_train': train_spearman[-1],
+        'final_val': val_spearman[-1],
+        'final_gap': gaps[-1],
+        'avg_gap': np.mean(gaps),
+        'min_gap': min(gaps),
+        'max_gap': max(gaps),
+        'gap_at_best': gaps[best_val_idx],
+        'train_spearman': train_spearman,
+        'val_spearman': val_spearman,
+        'gaps': gaps,
     }
 
-
-def print_analysis(result):
-    """Print training analysis."""
-    print("=" * 80)
-    print("Training Progress Analysis")
-    print("=" * 80)
+def plot_training_curves(experiments: List[Dict], output_path: Path):
+    """Plot training curves for all experiments."""
+    fig, axes = plt.subplots(2, 2, figsize=(14, 10))
     
-    if result['complete']:
-        print(f"\n✓ Training Complete!")
-        print(f"  Best validation loss: {result['best_val_loss']:.6f}")
-    else:
-        if result.get('current_epoch'):
-            ep = result['current_epoch']
-            print(f"\n⏳ Training In Progress")
-            print(f"  Current epoch: {ep['epoch']}/{ep['total']} ({ep['epoch']/ep['total']*100:.1f}%)")
-            if ep.get('stage'):
-                print(f"  Curriculum stage: {ep['stage']}/{ep.get('total_stages', '?')}")
-            if ep.get('progress') is not None:
-                print(f"  Stage progress: {ep['progress']:.1f}%")
-        else:
-            print("\n⏳ Training In Progress (checking log...)")
+    # Plot 1: Spearman correlation over time
+    ax = axes[0, 0]
+    for exp in experiments:
+        epochs = range(1, len(exp['train_spearman']) + 1)
+        ax.plot(epochs, exp['train_spearman'], label=f"{exp['name']} (train)", linestyle='--', alpha=0.7)
+        ax.plot(epochs, exp['val_spearman'], label=f"{exp['name']} (val)", linewidth=2)
+    ax.set_xlabel('Epoch')
+    ax.set_ylabel('Spearman Correlation')
+    ax.set_title('Training Progress')
+    ax.legend()
+    ax.grid(True, alpha=0.3)
     
-    epochs = result.get('epochs', [])
-    if epochs:
-        print(f"\nCompleted Epochs: {len(epochs)}")
-        print(f"\n{'Epoch':<8} {'Train Loss':<12} {'Val Loss':<12} {'Saved':<8} {'Stage':<10}")
-        print("-" * 60)
-        
-        for ep in epochs[-10:]:  # Last 10 epochs
-            saved = "✓" if ep.get('saved') else ""
-            stage = f"{ep.get('stage', '?')}/{ep.get('total_stages', '?')}" if ep.get('stage') else "-"
-            train_loss = f"{ep['train_loss']:.6f}" if ep.get('train_loss') else "-"
-            val_loss = f"{ep['val_loss']:.6f}" if ep.get('val_loss') else "-"
-            
-            print(f"{ep['epoch']:<8} {train_loss:<12} {val_loss:<12} {saved:<8} {stage:<10}")
-        
-        # Loss trends
-        if len(epochs) >= 2:
-            train_losses = [ep['train_loss'] for ep in epochs if ep.get('train_loss')]
-            val_losses = [ep['val_loss'] for ep in epochs if ep.get('val_loss')]
-            
-            if train_losses:
-                print(f"\nLoss Trends:")
-                print(f"  Train loss: {train_losses[0]:.6f} → {train_losses[-1]:.6f} "
-                      f"({(train_losses[-1] - train_losses[0]):.6f})")
-                if val_losses:
-                    print(f"  Val loss:   {val_losses[0]:.6f} → {val_losses[-1]:.6f} "
-                          f"({(val_losses[-1] - val_losses[0]):.6f})")
-                    
-                    # Check if improving
-                    if len(val_losses) >= 3:
-                        recent_trend = val_losses[-3:]
-                        if recent_trend[-1] < recent_trend[0]:
-                            print(f"  ✓ Validation loss decreasing (improving)")
-                        elif recent_trend[-1] > recent_trend[0]:
-                            print(f"  ⚠ Validation loss increasing (may be overfitting)")
-                        else:
-                            print(f"  → Validation loss stable")
-
+    # Plot 2: Gap over time
+    ax = axes[0, 1]
+    for exp in experiments:
+        epochs = range(1, len(exp['gaps']) + 1)
+        ax.plot(epochs, exp['gaps'], label=exp['name'], linewidth=2)
+    ax.set_xlabel('Epoch')
+    ax.set_ylabel('Train - Val Gap')
+    ax.set_title('Overfitting Gap')
+    ax.legend()
+    ax.grid(True, alpha=0.3)
+    
+    # Plot 3: Best validation comparison
+    ax = axes[1, 0]
+    names = [exp['name'] for exp in experiments]
+    best_vals = [exp['best_val'] for exp in experiments]
+    colors = plt.cm.viridis(np.linspace(0, 1, len(experiments)))
+    bars = ax.bar(names, best_vals, color=colors)
+    ax.set_ylabel('Best Validation Spearman')
+    ax.set_title('Best Performance Comparison')
+    ax.set_xticklabels(names, rotation=45, ha='right')
+    ax.grid(True, alpha=0.3, axis='y')
+    for bar, val in zip(bars, best_vals):
+        ax.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 0.01,
+                f'{val:.4f}', ha='center', va='bottom', fontsize=9)
+    
+    # Plot 4: Final gap comparison
+    ax = axes[1, 1]
+    final_gaps = [exp['final_gap'] for exp in experiments]
+    bars = ax.bar(names, final_gaps, color=colors)
+    ax.set_ylabel('Final Train-Val Gap')
+    ax.set_title('Overfitting Comparison')
+    ax.set_xticklabels(names, rotation=45, ha='right')
+    ax.grid(True, alpha=0.3, axis='y')
+    for bar, gap in zip(bars, final_gaps):
+        ax.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 0.01,
+                f'{gap:.4f}', ha='center', va='bottom', fontsize=9)
+    
+    plt.tight_layout()
+    plt.savefig(output_path, dpi=150)
+    print(f"Saved training analysis plot to {output_path}")
 
 def main():
-    import argparse
-    parser = argparse.ArgumentParser(description="Analyze training progress")
-    parser.add_argument("--log", type=Path, default="training.log", help="Training log file")
-    args = parser.parse_args()
+    experiments_data = [
+        ('temporal_amoo', Path('models/history_temporal_amoo.json')),
+        ('reduced_capacity', Path('models/history_reduced_capacity.json')),
+        ('batchnorm', Path('models/history_batchnorm.json')),
+    ]
     
-    if not args.log.exists():
-        print(f"Error: Log file not found: {args.log}")
+    experiments = []
+    for name, path in experiments_data:
+        history = load_history(path)
+        if history:
+            analysis = analyze_experiment(name, history)
+            if analysis:
+                experiments.append(analysis)
+    
+    if not experiments:
+        print("No completed experiments found for analysis.")
         return
     
-    result = parse_training_log(args.log)
-    print_analysis(result)
-
+    print("=" * 80)
+    print("TRAINING PROGRESS ANALYSIS")
+    print("=" * 80)
+    print()
+    
+    # Summary table
+    print(f"{'Experiment':<25} {'Epochs':<8} {'Best Val':<10} {'Final Gap':<12} {'Gap %':<8}")
+    print("-" * 80)
+    for exp in experiments:
+        gap_pct = (exp['final_gap'] / exp['final_train'] * 100) if exp['final_train'] > 0 else 0
+        print(f"{exp['name']:<25} {exp['epochs']:<8} {exp['best_val']:<10.4f} {exp['final_gap']:<12.4f} {gap_pct:<8.1f}%")
+    
+    # Detailed analysis
+    print()
+    print("=" * 80)
+    print("DETAILED ANALYSIS")
+    print("=" * 80)
+    for exp in experiments:
+        print(f"\n{exp['name'].upper()}:")
+        print(f"  Best Validation: {exp['best_val']:.4f} (epoch {exp['best_val_epoch']})")
+        print(f"  Final Train: {exp['final_train']:.4f}")
+        print(f"  Final Val: {exp['final_val']:.4f}")
+        print(f"  Final Gap: {exp['final_gap']:.4f} ({(exp['final_gap']/exp['final_train']*100):.1f}%)")
+        print(f"  Average Gap: {exp['avg_gap']:.4f}")
+        print(f"  Gap Range: [{exp['min_gap']:.4f}, {exp['max_gap']:.4f}]")
+        print(f"  Gap at Best: {exp['gap_at_best']:.4f}")
+    
+    # Plot if we have data
+    if len(experiments) > 0:
+        plot_training_curves(experiments, Path('models/training_analysis.png'))
 
 if __name__ == "__main__":
     main()
-

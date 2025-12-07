@@ -16,6 +16,7 @@ except ImportError:
     HAS_LIGHTNING = False
     print("⚠️  PyTorch Lightning not installed. Install with: pip install lightning")
 
+from tiny_icf.curriculum import get_stage_schedule
 from tiny_icf.lightning_data import IDFDataModule
 from tiny_icf.lightning_module import IDFLightningModule
 

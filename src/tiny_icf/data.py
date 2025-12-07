@@ -2,8 +2,9 @@
 
 import csv
 import math
+from functools import lru_cache
 from pathlib import Path
-from typing import Dict, List, Tuple, Callable
+from typing import Dict, List, Tuple, Optional, Callable, Callable, Optional
 
 import numpy as np
 import torch
@@ -127,7 +128,7 @@ def load_frequency_list(
 
 def stratified_sample(
     word_icf: Dict[str, float],
-    word_counts: Dict[str, int] | None = None,
+    word_counts: Optional[Dict[str, int]] = None,
     head_size: int = 10000,
     body_size: int = 100000,
     head_prob: float = 0.4,
@@ -157,7 +158,7 @@ def stratified_sample(
     body = sorted_words[head_size:body_size] if len(sorted_words) > head_size else []
     tail = sorted_words[body_size:] if len(sorted_words) > body_size else []
     
-    def sample_with_weights(items: List[Tuple[str, float]], n_samples: int, weights: List[float] | None = None) -> List[Tuple[str, float]]:
+    def sample_with_weights(items: List[Tuple[str, float]], n_samples: int, weights: Optional[List[float]] = None) -> List[Tuple[str, float]]:
         """Sample items, optionally weighted by token frequency."""
         if not items:
             return []
@@ -198,14 +199,16 @@ def stratified_sample(
 
 
 class WordICFDataset(Dataset):
-    """PyTorch Dataset for word-ICF pairs."""
+    """PyTorch Dataset for word-ICF pairs with efficient caching."""
     
     def __init__(
         self,
         word_icf_pairs: List[Tuple[str, float]],
         max_length: int = 20,
         augment_prob: float = 0.0,
-        augmentation_fn: Callable[[str], str] | None = None,
+        augmentation_fn: Optional[Callable[[str], str]] = None,
+        cache_byte_tensors: bool = True,
+        return_words: bool = False,  # For distillation: return word strings
     ):
         """
         Args:
@@ -213,30 +216,68 @@ class WordICFDataset(Dataset):
             max_length: Maximum character length (padding/truncation)
             augment_prob: Probability of applying augmentation
             augmentation_fn: Custom augmentation function (None = use default)
+            cache_byte_tensors: If True, cache byte tensor conversions for efficiency
+            return_words: If True, return word strings (for distillation)
         """
         self.pairs = word_icf_pairs
         self.max_length = max_length
         self.augment_prob = augment_prob
         self.augmentation_fn = augmentation_fn or AdvancedAugmentation()
+        self.cache_byte_tensors = cache_byte_tensors
+        self.return_words = return_words
+        
+        # Pre-compute byte tensors for validation (no augmentation) or when augment_prob=0
+        # This avoids repeated UTF-8 encoding/decoding - major bottleneck fix
+        if cache_byte_tensors and augment_prob == 0.0:
+            # Pre-compute ALL byte tensors upfront for validation set
+            # This eliminates __getitem__ overhead entirely
+            self._byte_cache = {}
+            self._precomputed_tensors = []
+            self._precomputed_icfs = []
+            
+            for word, icf in self.pairs:
+                byte_tensor = self._word_to_bytes_impl(word)
+                self._byte_cache[word] = byte_tensor
+                self._precomputed_tensors.append(byte_tensor)
+                self._precomputed_icfs.append(icf)
+            
+            # Convert to tensors for faster indexing
+            self._precomputed_tensors = torch.stack(self._precomputed_tensors)
+            self._precomputed_icfs = torch.tensor(self._precomputed_icfs, dtype=torch.float32)
+            self._use_precomputed = True
+            print(f"✅ Pre-computed {len(self._precomputed_tensors)} validation samples (zero __getitem__ overhead)")
+        else:
+            self._byte_cache = {}
+            self._use_precomputed = False
     
     def __len__(self) -> int:
         return len(self.pairs)
     
-    def _word_to_bytes(self, word: str) -> torch.Tensor:
+    def _word_to_bytes_impl(self, word: str) -> torch.Tensor:
         """
-        Convert word to byte tensor with character-boundary aware truncation.
-        
-        Truncates at character boundaries (not byte boundaries) to preserve UTF-8 validity.
-        Similar to Rust's bstr approach - ensures multi-byte characters aren't corrupted.
+        Internal implementation: Convert word to byte tensor.
+        Cached separately for efficiency.
         """
         import unicodedata
         
-        # Normalize to NFC (canonical composition) for consistency
-        word = unicodedata.normalize('NFC', word)
+        # Handle empty or None words
+        if not word:
+            return torch.zeros(self.max_length, dtype=torch.long)
         
-        # Truncate characters first (preserves UTF-8 validity)
+        # Normalize to NFC (canonical composition) for consistency
+        try:
+            word = unicodedata.normalize('NFC', word)
+        except (UnicodeError, TypeError):
+            # Fallback: use word as-is if normalization fails
+            pass
+        
+        # Truncate characters first (preserves UTF-8 validity for most cases)
         chars = list(word)[:self.max_length]
-        byte_seq = ''.join(chars).encode("utf-8")
+        try:
+            byte_seq = ''.join(chars).encode("utf-8")
+        except (UnicodeEncodeError, UnicodeError):
+            # Fallback: encode with error handling
+            byte_seq = ''.join(chars).encode("utf-8", errors='replace')
         
         # Truncate bytes if needed (multi-byte chars can exceed max_length)
         if len(byte_seq) > self.max_length:
@@ -248,6 +289,22 @@ class WordICFDataset(Dataset):
         padded = byte_seq + bytes(pad_length)
         return torch.tensor(list(padded), dtype=torch.long)
     
+    def _word_to_bytes(self, word: str) -> torch.Tensor:
+        """
+        Convert word to byte tensor with caching for efficiency.
+        
+        Uses cache when augment_prob=0 (validation) or when word hasn't been augmented.
+        """
+        # Check cache first (only valid when no augmentation)
+        if self.cache_byte_tensors and word in self._byte_cache:
+            return self._byte_cache[word]
+        
+        # Compute and optionally cache
+        result = self._word_to_bytes_impl(word)
+        if self.cache_byte_tensors and self.augment_prob == 0.0:
+            self._byte_cache[word] = result
+        return result
+    
     def _augment(self, word: str) -> str:
         """Apply advanced augmentation."""
         if np.random.random() > self.augment_prob:
@@ -256,8 +313,17 @@ class WordICFDataset(Dataset):
         # Use advanced augmentation function
         return self.augmentation_fn(word)
     
-    def __getitem__(self, idx: int) -> Tuple[torch.Tensor, torch.Tensor]:
+    def __getitem__(self, idx: int):
+        # Fast path: use precomputed tensors for validation (no augmentation)
+        if self._use_precomputed:
+            if self.return_words:
+                word, _ = self.pairs[idx]
+                return self._precomputed_tensors[idx], self._precomputed_icfs[idx], word
+            return self._precomputed_tensors[idx], self._precomputed_icfs[idx]
+        
+        # Standard path: training with augmentation
         word, icf = self.pairs[idx]
+        original_word = word  # Keep original for distillation
         
         # Apply augmentation during training
         word = self._augment(word)
@@ -265,5 +331,7 @@ class WordICFDataset(Dataset):
         byte_tensor = self._word_to_bytes(word)
         icf_tensor = torch.tensor(icf, dtype=torch.float32)
         
+        if self.return_words:
+            return byte_tensor, icf_tensor, original_word
         return byte_tensor, icf_tensor
 

@@ -84,6 +84,7 @@ class UniversalICFDataset(WordICFDataset):
         emoji_freq_path: Path | None = None,
         include_symbols: bool = True,
         include_emojis: bool = True,
+        return_words: bool = False,  # For distillation: return word strings
     ):
         """
         Args:
@@ -113,5 +114,6 @@ class UniversalICFDataset(WordICFDataset):
             max_length=max_length,
             augment_prob=augment_prob,
             augmentation_fn=augmentation_fn,
+            return_words=return_words,
         )
 

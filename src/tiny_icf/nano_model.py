@@ -43,6 +43,31 @@ class NanoICF(nn.Module):
         # Simple linear head (no hidden layer for speed)
         self.head = nn.Linear(conv_channels, 1)
     
+    def init_weights(self, mean_icf: float = 0.4):
+        """Initialize model weights with proper strategies."""
+        def init_layer(m):
+            if isinstance(m, nn.Embedding):
+                nn.init.normal_(m.weight, mean=0.0, std=0.1)
+                if m.padding_idx is not None:
+                    nn.init.constant_(m.weight[m.padding_idx], 0.0)
+            elif isinstance(m, nn.Linear):
+                nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
+                if m.bias is not None:
+                    nn.init.constant_(m.bias, 0.0)
+            elif isinstance(m, nn.Conv1d):
+                nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
+                if m.bias is not None:
+                    nn.init.constant_(m.bias, 0.0)
+        
+        self.apply(init_layer)
+        
+        # Initialize final layer bias
+        with torch.no_grad():
+            if isinstance(self.head, nn.Linear):
+                self.head.weight.data *= 0.1
+                if self.head.bias is not None:
+                    self.head.bias.fill_(mean_icf)
+    
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
         Args:

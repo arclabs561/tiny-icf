@@ -87,6 +87,10 @@ def calibration_loss(
     Returns:
         Scalar loss value
     """
+    # Handle small batches
+    if len(predictions) < bins:
+        return torch.tensor(0.0, device=predictions.device, requires_grad=True)
+    
     # Bin predictions and targets
     pred_bins = torch.linspace(0, 1, bins + 1, device=predictions.device)
     target_bins = torch.linspace(0, 1, bins + 1, device=targets.device)
@@ -95,17 +99,33 @@ def calibration_loss(
     pred_counts = torch.histc(predictions.squeeze(), bins=bins, min=0, max=1)
     target_counts = torch.histc(targets.squeeze(), bins=bins, min=0, max=1)
     
-    # Normalize to probabilities
-    pred_probs = pred_counts / (pred_counts.sum() + 1e-8)
-    target_probs = target_counts / (target_counts.sum() + 1e-8)
+    # Normalize to probabilities (add epsilon to avoid log(0))
+    pred_sum = pred_counts.sum()
+    target_sum = target_counts.sum()
+    
+    if pred_sum < 1e-8 or target_sum < 1e-8:
+        return torch.tensor(0.0, device=predictions.device, requires_grad=True)
+    
+    pred_probs = pred_counts / pred_sum
+    target_probs = target_counts / target_sum
+    
+    # Add small epsilon to avoid log(0) in KL divergence
+    pred_probs = pred_probs + 1e-8
+    pred_probs = pred_probs / pred_probs.sum()  # Renormalize
+    
+    target_probs = target_probs + 1e-8
+    target_probs = target_probs / target_probs.sum()  # Renormalize
     
     # KL divergence
     kl = F.kl_div(
         pred_probs.log().unsqueeze(0),
         target_probs.unsqueeze(0),
         reduction='batchmean',
+        log_target=False,
     )
-    return kl
+    
+    # Clamp to prevent NaN/Inf
+    return torch.clamp(kl, min=0.0, max=10.0)
 
 
 class EnhancedMultiLoss(nn.Module):
@@ -163,21 +183,32 @@ class EnhancedMultiLoss(nn.Module):
         
         # 1. Huber loss (always)
         huber = huber_loss(predictions, targets, delta=self.huber_delta)
+        if torch.isnan(huber) or torch.isinf(huber):
+            huber = torch.tensor(0.0, device=predictions.device, requires_grad=True)
         total_loss += self.huber_weight * huber
         
         # 2. Ranking loss (if pairs provided)
         if pairs is not None and len(pairs) > 0:
             idx1, idx2 = pairs[:, 0], pairs[:, 1]
+            # Clamp indices to valid range
+            idx1 = torch.clamp(idx1, 0, len(predictions) - 1)
+            idx2 = torch.clamp(idx2, 0, len(predictions) - 1)
             rank = ranking_loss(
                 predictions[idx1],
                 predictions[idx2],
                 margin=self.rank_margin,
+                target_diff=pair_target_diffs,  # Use provided diffs for weighted loss
+                smooth=True,  # Use smooth sigmoid-based loss
             )
-            total_loss += self.rank_weight * rank
+            if not torch.isnan(rank) and not torch.isinf(rank):
+                total_loss += self.rank_weight * rank
         
         # 3. Contrastive loss (if common/rare indices provided)
         if common_indices is not None and rare_indices is not None:
             if len(common_indices) > 0 and len(rare_indices) > 0:
+                # Clamp indices to valid range
+                common_indices = torch.clamp(common_indices, 0, len(predictions) - 1)
+                rare_indices = torch.clamp(rare_indices, 0, len(predictions) - 1)
                 pred_common = predictions[common_indices]
                 pred_rare = predictions[rare_indices]
                 contrastive = contrastive_loss(
@@ -185,17 +216,25 @@ class EnhancedMultiLoss(nn.Module):
                     pred_rare,
                     margin=self.contrastive_margin,
                 )
-                total_loss += self.contrastive_weight * contrastive
+                if not torch.isnan(contrastive) and not torch.isinf(contrastive):
+                    total_loss += self.contrastive_weight * contrastive
         
         # 4. Consistency loss (if similarity matrix provided)
         if word_similarity is not None:
             consistency = consistency_loss(predictions, word_similarity)
-            total_loss += self.consistency_weight * consistency
+            if not torch.isnan(consistency) and not torch.isinf(consistency):
+                total_loss += self.consistency_weight * consistency
         
         # 5. Calibration loss (always, but lightweight)
         if len(predictions) > 10:  # Need enough samples
             calibration = calibration_loss(predictions, targets)
-            total_loss += self.calibration_weight * calibration
+            if not torch.isnan(calibration) and not torch.isinf(calibration):
+                total_loss += self.calibration_weight * calibration
+        
+        # Safety check: return huber if total_loss is NaN/Inf
+        if torch.isnan(total_loss) or torch.isinf(total_loss):
+            # Fallback to just Huber loss
+            return self.huber_weight * huber
         
         return total_loss
 

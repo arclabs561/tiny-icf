@@ -2,7 +2,7 @@
 
 import random
 import string
-from typing import List
+from typing import List, Optional
 
 # Common misspelling patterns
 MISSPELLING_PATTERNS = {
@@ -71,7 +71,7 @@ def apply_misspelling(word: str, pattern: str, prob: float = 0.5) -> str:
     return word
 
 
-def augment_word(word: str, num_augmentations: int = 1, patterns: List[str] | None = None) -> List[str]:
+def augment_word(word: str, num_augmentations: int = 1, patterns: Optional[List[str]] = None) -> List[str]:
     """
     Generate augmented versions of a word.
     

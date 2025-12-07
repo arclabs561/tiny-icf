@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env -S uv run
 """
 RunPod training automation script.
 Uses runpodctl or MCP tools to create a GPU pod and run training.

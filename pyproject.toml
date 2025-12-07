@@ -9,20 +9,34 @@ dependencies = [
     "numpy>=1.24.0",
     "pandas>=2.0.0",
     "tqdm>=4.65.0",
-    "scipy>=1.10.0",  # For correlation metrics
-    "lightning>=2.0.0",  # PyTorch Lightning for non-interactive training
+    "scipy>=1.10.0", # For correlation metrics
+    "lightning>=2.0.0", # PyTorch Lightning for non-interactive training
+    "aim>=3.29.0", # Experiment tracking
+    "requests>=2.31.0", # For dataset downloading
 ]
 
 [project.optional-dependencies]
-dev = [
-    "pytest>=7.4.0",
-    "pytest-cov>=4.1.0",
-    "black>=23.0.0",
-    "ruff>=0.1.0",
-]
-embeddings = [
-    "sentence-transformers>=2.2.0",  # For text reduction with real embeddings
-]
+    dev = [
+        "pytest>=7.4.0",
+        "pytest-cov>=4.1.0",
+        "black>=23.0.0",
+        "ruff>=0.1.0",
+    ]
+    embeddings = [
+        "sentence-transformers>=2.2.0",  # For text reduction with real embeddings
+    ]
+    distillation = [
+        "sentence-transformers>=2.2.0",  # Lightweight teacher models
+        "transformers>=4.30.0",  # For BERT/RoBERTa teacher models (optional)
+    ]
+    sorting = [
+        "diffsort>=0.1.0",  # Differentiable sorting networks (ICLR 2022)
+        "torchsort>=0.1.6",  # Fast differentiable sorting (O(n log n), recommended)
+    ]
+
+[project.scripts]
+tiny-icf-train = "tiny_icf.train:main"
+tiny-icf-predict = "tiny_icf.predict:main"
 
 [build-system]
 requires = ["hatchling"]
