@@ -123,3 +123,24 @@ config/
 *.pt
 *.onnx
 *.bin
+
+# Data and models (large files)
+models/
+data/
+evaluation_results/
+logs/
+*.pt
+*.onnx
+*.bin
+*.pkl
+
+# Experiment outputs
+experiments/
+.aim/
+
+# Build
+rust/target/
+rust/Cargo.lock
+
+# Temp
+s
