@@ -114,3 +114,12 @@ README_*.md
 RENAME_*.md
 REPO_NAME_*.md
 GITHUB_SETUP.md
+
+# Cache and data
+cache/
+.aim/
+archive/
+config/
+*.pt
+*.onnx
+*.bin
