@@ -1,0 +1,41 @@
+#!/bin/bash
+# Quick start: Minimal script to get training running
+# This is a simplified version that requires manual steps
+
+set -euo pipefail
+
+echo "🚀 Lyceum Quick Start"
+echo ""
+echo "Step 1: Authenticate (if not already)"
+echo "  lyceum auth login"
+echo ""
+echo "Step 2: Check availability"
+echo "  lyceum vms availability"
+echo ""
+echo "Step 3: Start VM"
+echo "  lyceum vms start -h a100 -k \"\$(cat ~/.ssh/id_ed25519.pub)\" -n \"training-\$(date +%Y%m%d)\""
+echo ""
+echo "Step 4: Wait for VM ready, then SSH in"
+echo "  ssh -i ~/.ssh/id_ed25519 ubuntu@<ip>"
+echo ""
+echo "Step 5: On VM, run:"
+echo "  cd ~/idf-est"
+echo "  uv sync"
+echo "  uv run python -m tiny_icf.train_lightning \\"
+echo "    --data data/word_frequency.csv \\"
+echo "    --output-dir models/lyceum \\"
+echo "    --epochs 100 \\"
+echo "    --batch-size 256 \\"
+echo "    --precision 16-mixed"
+echo ""
+echo "Step 6: Download results (from local machine)"
+echo "  ./scripts/lyceum_download_results.sh <vm-ip>"
+echo ""
+echo "Step 7: Terminate VM"
+echo "  lyceum vms terminate <vm-id> -f"
+echo ""
+echo "---"
+echo ""
+echo "Or use the fully automated script:"
+echo "  ./scripts/lyceum_train.sh a100 100 256"
+

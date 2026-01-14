@@ -1,0 +1,248 @@
+{
+  "metrics": {
+    "mae": 0.5483767986297607,
+    "rmse": 0.5520818829536438,
+    "median_ae": 0.5663938522338867,
+    "max_ae": 0.615877628326416,
+    "p95_ae": 0.612216055393219,
+    "mre": 1.0,
+    "median_re": 1.0,
+    "spearman_corr": NaN,
+    "spearman_p": NaN,
+    "pearson_corr": NaN,
+    "pearson_p": NaN,
+    "kendall_corr": NaN,
+    "kendall_p": NaN,
+    "pred_min": 0.0,
+    "pred_max": 0.0,
+    "pred_mean": 0.0,
+    "pred_std": 0.0,
+    "pred_median": 0.0,
+    "target_min": 0.15546607971191406,
+    "target_max": 0.615877628326416,
+    "target_mean": 0.5483767986297607,
+    "target_std": 0.0638534426689148,
+    "target_median": 0.5663938522338867,
+    "mean_diff": 0.5483767986297607,
+    "std_ratio": 0.0,
+    "range_coverage": 0.0,
+    "calibration_error": 0.5483767986297607
+  },
+  "ranking_metrics": {
+    "precision_at_k": 0.0,
+    "top_k_overlap": 0,
+    "mean_rank_error": 2225.6,
+    "median_rank_error": 2634.0
+  },
+  "frequency_analysis": {
+    "bins": [
+      {
+        "bin": "0.00-0.20",
+        "n_samples": 5,
+        "mae": 0.17713673412799835,
+        "rmse": 0.1776880919933319,
+        "mean_error": -0.17713673412799835,
+        "pred_mean": 0.0,
+        "target_mean": 0.17713673412799835
+      },
+      {
+        "bin": "0.20-0.40",
+        "n_samples": 184,
+        "mae": 0.34743109345436096,
+        "rmse": 0.350380003452301,
+        "mean_error": -0.34743109345436096,
+        "pred_mean": 0.0,
+        "target_mean": 0.34743109345436096
+      },
+      {
+        "bin": "0.40-0.60",
+        "n_samples": 3830,
+        "mae": 0.5431914329528809,
+        "rmse": 0.5451710820198059,
+        "mean_error": -0.5431914329528809,
+        "pred_mean": 0.0,
+        "target_mean": 0.5431914329528809
+      },
+      {
+        "bin": "0.60-0.80",
+        "n_samples": 981,
+        "mae": 0.6082038283348083,
+        "rmse": 0.6082218885421753,
+        "mean_error": -0.6082038283348083,
+        "pred_mean": 0.0,
+        "target_mean": 0.6082038283348083
+      }
+    ],
+    "overall": {
+      "mae": 0.5483767986297607,
+      "rmse": 0.5520818829536438
+    }
+  },
+  "length_analysis": {
+    "bins": [
+      {
+        "length_range": "1-3",
+        "n_samples": 368,
+        "mae": 0.5112230777740479,
+        "rmse": 0.5222982168197632,
+        "mean_error": -0.5112230777740479
+      },
+      {
+        "length_range": "4-6",
+        "n_samples": 2496,
+        "mae": 0.5410105586051941,
+        "rmse": 0.5448560118675232,
+        "mean_error": -0.5410105586051941
+      },
+      {
+        "length_range": "7-9",
+        "n_samples": 1728,
+        "mae": 0.5603755712509155,
+        "rmse": 0.5624673366546631,
+        "mean_error": -0.5603755712509155
+      },
+      {
+        "length_range": "10-14",
+        "n_samples": 406,
+        "mae": 0.5763437151908875,
+        "rmse": 0.5773558020591736,
+        "mean_error": -0.5763437151908875
+      },
+      {
+        "length_range": "15-19",
+        "n_samples": 2,
+        "mae": 0.5335007905960083,
+        "rmse": 0.5376104116439819,
+        "mean_error": -0.5335007905960083
+      }
+    ]
+  },
+  "ranking_analysis": {
+    "top_k_overlap": 0.01,
+    "bottom_k_overlap": 0.01,
+    "top_k_mean_rank_error": 49.5,
+    "bottom_k_mean_rank_error": 48.65
+  },
+  "worst_predictions": [
+    {
+      "word": "perp",
+      "prediction": 0.0,
+      "target": 0.615877628326416,
+      "error": 0.615877628326416
+    },
+    {
+      "word": "dawg",
+      "prediction": 0.0,
+      "target": 0.615877628326416,
+      "error": 0.615877628326416
+    },
+    {
+      "word": "boogie",
+      "prediction": 0.0,
+      "target": 0.615857720375061,
+      "error": 0.615857720375061
+    },
+    {
+      "word": "hash",
+      "prediction": 0.0,
+      "target": 0.6158179640769958,
+      "error": 0.6158179640769958
+    },
+    {
+      "word": "initials",
+      "prediction": 0.0,
+      "target": 0.6158179640769958,
+      "error": 0.6158179640769958
+    },
+    {
+      "word": "grieving",
+      "prediction": 0.0,
+      "target": 0.6158179640769958,
+      "error": 0.6158179640769958
+    },
+    {
+      "word": "kidnapper",
+      "prediction": 0.0,
+      "target": 0.6157980561256409,
+      "error": 0.6157980561256409
+    },
+    {
+      "word": "tyson",
+      "prediction": 0.0,
+      "target": 0.6157980561256409,
+      "error": 0.6157980561256409
+    },
+    {
+      "word": "margarita",
+      "prediction": 0.0,
+      "target": 0.6157980561256409,
+      "error": 0.6157980561256409
+    },
+    {
+      "word": "dispose",
+      "prediction": 0.0,
+      "target": 0.6157980561256409,
+      "error": 0.6157980561256409
+    },
+    {
+      "word": "bullied",
+      "prediction": 0.0,
+      "target": 0.6157782077789307,
+      "error": 0.6157782077789307
+    },
+    {
+      "word": "spider-man",
+      "prediction": 0.0,
+      "target": 0.6157782077789307,
+      "error": 0.6157782077789307
+    },
+    {
+      "word": "loo",
+      "prediction": 0.0,
+      "target": 0.6157582998275757,
+      "error": 0.6157582998275757
+    },
+    {
+      "word": "cain",
+      "prediction": 0.0,
+      "target": 0.6157384514808655,
+      "error": 0.6157384514808655
+    },
+    {
+      "word": "della",
+      "prediction": 0.0,
+      "target": 0.6157186031341553,
+      "error": 0.6157186031341553
+    },
+    {
+      "word": "suckers",
+      "prediction": 0.0,
+      "target": 0.6157186031341553,
+      "error": 0.6157186031341553
+    },
+    {
+      "word": "doubled",
+      "prediction": 0.0,
+      "target": 0.6156789660453796,
+      "error": 0.6156789660453796
+    },
+    {
+      "word": "kathleen",
+      "prediction": 0.0,
+      "target": 0.6156789660453796,
+      "error": 0.6156789660453796
+    },
+    {
+      "word": "overdose",
+      "prediction": 0.0,
+      "target": 0.6156789660453796,
+      "error": 0.6156789660453796
+    },
+    {
+      "word": "dim",
+      "prediction": 0.0,
+      "target": 0.6155799031257629,
+      "error": 0.6155799031257629
+    }
+  ]
+}
