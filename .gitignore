@@ -144,3 +144,7 @@ rust/Cargo.lock
 
 # Temp
 s
+
+# Training artifacts
+training_history/
+*.pid
