@@ -1,11 +1,10 @@
 """Universal data handling: symbols, emojis, multilingual."""
 
 import csv
-import math
 from pathlib import Path
 from typing import Dict, List, Tuple
 
-from tiny_icf.data import WordICFDataset, compute_normalized_icf, load_frequency_list
+from tiny_icf.data import WordICFDataset, load_frequency_list
 from tiny_icf.symbol_augmentation import UniversalAugmentation
 
 
@@ -15,26 +14,26 @@ def load_frequency_list_with_emojis(
 ) -> Tuple[Dict[str, int], int]:
     """
     Load frequency list including emojis/emoticons.
-    
+
     Merges word frequencies with emoji frequencies for complete coverage.
     """
     word_counts, total_tokens = load_frequency_list(word_freq_path)
-    
+
     # Add emoji frequencies if available
     if emoji_freq_path and emoji_freq_path.exists():
-        with open(emoji_freq_path, 'r', encoding='utf-8') as f:
+        with open(emoji_freq_path, "r", encoding="utf-8") as f:
             reader = csv.DictReader(f)
             for row in reader:
-                emoji = row['emoji'].strip()
-                count = int(row['count'])
+                emoji = row["emoji"].strip()
+                count = int(row["count"])
                 word_counts[emoji] = word_counts.get(emoji, 0) + count
                 total_tokens += count
-        
+
         # Count emojis added (re-read file to count)
-        with open(emoji_freq_path, 'r', encoding='utf-8') as f:
+        with open(emoji_freq_path, "r", encoding="utf-8") as f:
             emoji_count = sum(1 for _ in csv.DictReader(f))
         print(f"Added {emoji_count} emoji/emoticon frequencies")
-    
+
     return word_counts, total_tokens
 
 
@@ -44,25 +43,25 @@ def filter_symbol_heavy_words(
 ) -> List[Tuple[str, float]]:
     """
     Filter out words that are mostly symbols (not useful for frequency estimation).
-    
+
     Keeps words that are primarily alphanumeric with some symbols.
     """
     filtered = []
-    
+
     for word, icf in word_icf_pairs:
         # Count alphanumeric vs non-alphanumeric
         alpha_count = sum(1 for c in word if c.isalnum())
         total_count = len(word)
-        
+
         if total_count == 0:
             continue
-        
+
         alpha_ratio = alpha_count / total_count
-        
+
         # Keep if mostly alphanumeric, or if it's a known emoji/emoticon
         if alpha_ratio >= (1 - max_symbol_ratio) or len(word) <= 3:
             filtered.append((word, icf))
-    
+
     return filtered
 
 
@@ -74,7 +73,7 @@ class UniversalICFDataset(WordICFDataset):
     - Emojis/emoticons
     - Multilingual typo patterns
     """
-    
+
     def __init__(
         self,
         word_icf_pairs: List[Tuple[str, float]],
@@ -99,7 +98,7 @@ class UniversalICFDataset(WordICFDataset):
         # Filter symbol-heavy words if needed
         if not include_symbols:
             word_icf_pairs = filter_symbol_heavy_words(word_icf_pairs)
-        
+
         # Use universal augmentation
         augmentation_fn = UniversalAugmentation(
             typo_corpus_path=typo_corpus_path,
@@ -108,7 +107,7 @@ class UniversalICFDataset(WordICFDataset):
             multilingual_prob=0.1,
             keyboard_prob=0.15,
         )
-        
+
         super().__init__(
             word_icf_pairs,
             max_length=max_length,
@@ -116,4 +115,3 @@ class UniversalICFDataset(WordICFDataset):
             augmentation_fn=augmentation_fn,
             return_words=return_words,
         )
-

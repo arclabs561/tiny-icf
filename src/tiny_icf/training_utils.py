@@ -10,30 +10,28 @@ from scipy.stats import spearmanr
 
 from tiny_icf.loss import CombinedLoss
 from tiny_icf.loss_monitoring import (
-    compute_loss_component_metrics,
     detect_loss_imbalance,
-    log_loss_components,
 )
 
 
 def generate_ranking_pairs(
-    targets: torch.Tensor, 
-    n_pairs: int, 
+    targets: torch.Tensor,
+    n_pairs: int,
     min_diff: float = 0.05,
     use_weighted_sampling: bool = True,
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """
     Generate pairs for ranking loss with sampling-based rewards.
-    
+
     Uses weighted sampling: pairs with larger ICF differences are sampled
     with higher probability, providing stronger learning signal.
-    
+
     Args:
         targets: [Batch, 1] or [Batch] ground truth ICF scores
         n_pairs: Number of pairs to generate
         min_diff: Minimum ICF difference required (default: 0.05)
         use_weighted_sampling: If True, sample pairs weighted by ICF difference
-    
+
     Returns:
         (pairs, diffs) where:
         - pairs: [N_pairs, 2] tensor of indices (i, j) where target[i] < target[j]
@@ -44,49 +42,51 @@ def generate_ranking_pairs(
         empty_pairs = torch.empty((0, 2), dtype=torch.long, device=targets.device)
         empty_diffs = torch.empty((0,), dtype=targets.dtype, device=targets.device)
         return empty_pairs, empty_diffs
-    
+
     # Handle both [Batch, 1] and [Batch] shapes
     if targets.dim() > 1 and targets.size(1) == 1:
         targets_flat = targets.squeeze(1)  # [Batch]
     else:
         targets_flat = targets  # Already [Batch]
-    
+
     # Vectorized pair generation (much faster than nested loops)
     # Create all pairs at once using broadcasting
     targets_expanded_i = targets_flat.unsqueeze(1)  # [Batch, 1]
     targets_expanded_j = targets_flat.unsqueeze(0)  # [1, Batch]
-    
+
     # Compute differences for all pairs: diff[i,j] = targets[j] - targets[i]
     diff_matrix = targets_expanded_j - targets_expanded_i  # [Batch, Batch]
-    
+
     # Find valid pairs where target[i] < target[j] (diff > 0) and diff >= min_diff
     valid_mask = (diff_matrix > min_diff) & (diff_matrix > 0)
-    
+
     # Get indices of valid pairs
     valid_i, valid_j = torch.where(valid_mask)
-    
+
     if len(valid_i) == 0:
         # Fallback: use pairs without min_diff requirement (just diff > 0)
         valid_mask = diff_matrix > 0
         valid_i, valid_j = torch.where(valid_mask)
-    
+
     if len(valid_i) == 0:
         # No valid pairs found
         empty_pairs = torch.empty((0, 2), dtype=torch.long, device=targets.device)
         empty_diffs = torch.empty((0,), dtype=targets.dtype, device=targets.device)
         return empty_pairs, empty_diffs
-    
+
     # Extract differences for valid pairs
     valid_diffs_tensor = diff_matrix[valid_i, valid_j]
-    
+
     # Stack into [N_pairs, 2] format
     valid_pairs_tensor = torch.stack([valid_i, valid_j], dim=1)
-    
+
     # Sample pairs (valid_pairs_tensor and valid_diffs_tensor already computed)
     if use_weighted_sampling and len(valid_pairs_tensor) > n_pairs:
         # Weight by difference (larger differences = higher probability)
         weights = valid_diffs_tensor / (valid_diffs_tensor.sum() + 1e-8)  # Avoid division by zero
-        indices = torch.multinomial(weights, min(n_pairs, len(valid_pairs_tensor)), replacement=False)
+        indices = torch.multinomial(
+            weights, min(n_pairs, len(valid_pairs_tensor)), replacement=False
+        )
         sampled_pairs = valid_pairs_tensor[indices]
         sampled_diffs = valid_diffs_tensor[indices]
     else:
@@ -95,7 +95,7 @@ def generate_ranking_pairs(
         indices = torch.randperm(len(valid_pairs_tensor), device=targets.device)[:n_sample]
         sampled_pairs = valid_pairs_tensor[indices]
         sampled_diffs = valid_diffs_tensor[indices]
-    
+
     return sampled_pairs, sampled_diffs
 
 
@@ -103,13 +103,13 @@ def prepare_batch(batch, device: torch.device) -> Tuple[torch.Tensor, torch.Tens
     """
     Prepare batch for training/validation.
     Handles both dict and tuple batch formats.
-    
+
     Returns:
         (words, targets) tensors on device
     """
     if isinstance(batch, dict):
-        words = batch['bytes'].to(device)
-        targets = batch['icf'].to(device)
+        words = batch["bytes"].to(device)
+        targets = batch["icf"].to(device)
         if targets.dim() == 1:
             targets = targets.unsqueeze(1)
     else:
@@ -118,7 +118,7 @@ def prepare_batch(batch, device: torch.device) -> Tuple[torch.Tensor, torch.Tens
         targets = targets.to(device)
         if targets.dim() == 1:
             targets = targets.unsqueeze(1)
-    
+
     return words, targets
 
 
@@ -128,19 +128,19 @@ def compute_spearman_safe(
 ) -> float:
     """
     Compute Spearman correlation with safe handling of edge cases.
-    
+
     Returns:
         Spearman correlation (0.0 if computation fails)
     """
     if len(predictions) == 0 or len(targets) == 0:
         return 0.0
-    
+
     pred_std = np.std(predictions)
     target_std = np.std(targets)
-    
+
     if pred_std == 0 or target_std == 0:
         return 0.0
-    
+
     try:
         corr, _ = spearmanr(predictions, targets)
         if np.isnan(corr) or np.isinf(corr):
@@ -169,7 +169,7 @@ def train_epoch_unified(
 ) -> Dict[str, float]:
     """
     Unified training epoch function with consistent behavior.
-    
+
     Args:
         model: Model to train
         dataloader: Training data loader
@@ -183,36 +183,39 @@ def train_epoch_unified(
         clip_grad_norm: Gradient clipping norm (None to disable)
         check_collapse: Check for model collapse
         collapse_threshold: Threshold for collapse detection
-    
+
     Returns:
         Dictionary with 'loss' and 'spearman_corr'
     """
     model.train()
     total_loss = 0.0
     n_batches = 0
-    
+
     predictions_list = []
     targets_list = []
-    
+
     print(f"Starting training loop, dataloader length: {len(dataloader)}", flush=True)
     for batch_idx, batch in enumerate(tqdm(dataloader, desc=f"Epoch {epoch}", leave=False)):
         if batch_idx == 0:
-            print(f"Processing first batch...", flush=True)
+            print("Processing first batch...", flush=True)
         words, targets = prepare_batch(batch, device)
         if batch_idx == 0:
-            print(f"Batch prepared: words shape={words.shape}, targets shape={targets.shape}", flush=True)
-        
+            print(
+                f"Batch prepared: words shape={words.shape}, targets shape={targets.shape}",
+                flush=True,
+            )
+
         # Skip empty batches
         if len(words) == 0:
             continue
-        
+
         optimizer.zero_grad()
-        
+
         # Forward pass (with mixed precision if enabled)
         if use_amp and scaler is not None:
             with torch.cuda.amp.autocast():
                 predictions = model(words)
-                
+
                 # Collapse detection
                 if check_collapse and len(predictions) > 1:
                     pred_std = predictions.std().item()
@@ -221,7 +224,7 @@ def train_epoch_unified(
                             f"Model collapsed: prediction std={pred_std:.6f} < {collapse_threshold}. "
                             "All predictions are too similar."
                         )
-                
+
                 # Generate ranking pairs
                 pairs, pair_target_diffs = generate_ranking_pairs(
                     targets.squeeze(1),
@@ -229,11 +232,13 @@ def train_epoch_unified(
                     min_diff=min_diff,
                     use_weighted_sampling=use_weighted_sampling,
                 )
-                
+
                 if pairs is not None and len(pairs) > 0:
                     pairs = pairs.to(device)
-                    pair_target_diffs = pair_target_diffs.to(device) if pair_target_diffs is not None else None
-                
+                    pair_target_diffs = (
+                        pair_target_diffs.to(device) if pair_target_diffs is not None else None
+                    )
+
                 # Compute loss
                 loss = criterion(
                     predictions,
@@ -241,41 +246,41 @@ def train_epoch_unified(
                     pairs=pairs,
                     pair_target_diffs=pair_target_diffs,
                 )
-            
+
             # Track loss components for monitoring
             loss_components = {}
-            if hasattr(criterion, 'get_component_stats'):
+            if hasattr(criterion, "get_component_stats"):
                 component_stats = criterion.get_component_stats()
                 if component_stats:
                     loss_components = {
-                        'huber': component_stats.get('huber_mean', 0),
-                        'ranking': component_stats.get('ranking_mean', 0),
+                        "huber": component_stats.get("huber_mean", 0),
+                        "ranking": component_stats.get("ranking_mean", 0),
                     }
                     if criterion.use_neural_ndcg:
-                        loss_components['neural_ndcg'] = component_stats.get('neural_ndcg_mean', 0)
+                        loss_components["neural_ndcg"] = component_stats.get("neural_ndcg_mean", 0)
                     if criterion.use_listwise_ranking:
-                        loss_components['listwise'] = component_stats.get('listwise_mean', 0)
-            
+                        loss_components["listwise"] = component_stats.get("listwise_mean", 0)
+
             # Check for imbalance (every 10 batches)
             if n_batches % 10 == 0 and loss_components:
                 is_imbalanced, dominant = detect_loss_imbalance(loss_components, threshold=0.7)
                 if is_imbalanced:
                     print(f"⚠️  Warning: Loss imbalance detected. Dominant components: {dominant}")
-            
+
             # Backward pass with scaler
             scaler.scale(loss).backward()
-            
+
             # Gradient clipping (unscale first)
             if clip_grad_norm is not None and clip_grad_norm > 0:
                 scaler.unscale_(optimizer)
                 torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=clip_grad_norm)
-            
+
             scaler.step(optimizer)
             scaler.update()
         else:
             # Standard forward/backward
             predictions = model(words)
-            
+
             # Collapse detection
             if check_collapse and len(predictions) > 1:
                 pred_std = predictions.std().item()
@@ -284,7 +289,7 @@ def train_epoch_unified(
                         f"Model collapsed: prediction std={pred_std:.6f} < {collapse_threshold}. "
                         "All predictions are too similar."
                     )
-            
+
             # Generate ranking pairs
             pairs, pair_target_diffs = generate_ranking_pairs(
                 targets.squeeze(1),
@@ -292,11 +297,13 @@ def train_epoch_unified(
                 min_diff=min_diff,
                 use_weighted_sampling=use_weighted_sampling,
             )
-            
+
             if pairs is not None and len(pairs) > 0:
                 pairs = pairs.to(device)
-                pair_target_diffs = pair_target_diffs.to(device) if pair_target_diffs is not None else None
-            
+                pair_target_diffs = (
+                    pair_target_diffs.to(device) if pair_target_diffs is not None else None
+                )
+
             # Compute loss
             loss = criterion(
                 predictions,
@@ -304,54 +311,54 @@ def train_epoch_unified(
                 pairs=pairs,
                 pair_target_diffs=pair_target_diffs,
             )
-            
+
             # Track loss components for monitoring
             loss_components = {}
-            if hasattr(criterion, 'get_component_stats'):
+            if hasattr(criterion, "get_component_stats"):
                 component_stats = criterion.get_component_stats()
                 if component_stats:
                     loss_components = {
-                        'huber': component_stats.get('huber_mean', 0),
-                        'ranking': component_stats.get('ranking_mean', 0),
+                        "huber": component_stats.get("huber_mean", 0),
+                        "ranking": component_stats.get("ranking_mean", 0),
                     }
                     if criterion.use_neural_ndcg:
-                        loss_components['neural_ndcg'] = component_stats.get('neural_ndcg_mean', 0)
+                        loss_components["neural_ndcg"] = component_stats.get("neural_ndcg_mean", 0)
                     if criterion.use_listwise_ranking:
-                        loss_components['listwise'] = component_stats.get('listwise_mean', 0)
-            
+                        loss_components["listwise"] = component_stats.get("listwise_mean", 0)
+
             # Check for imbalance (every 10 batches)
             if n_batches % 10 == 0 and loss_components:
                 is_imbalanced, dominant = detect_loss_imbalance(loss_components, threshold=0.7)
                 if is_imbalanced:
                     print(f"⚠️  Warning: Loss imbalance detected. Dominant components: {dominant}")
-            
+
             # Backward pass
             loss.backward()
-            
+
             # Gradient clipping
             if clip_grad_norm is not None and clip_grad_norm > 0:
                 torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=clip_grad_norm)
-            
+
             optimizer.step()
-        
+
         # Accumulate metrics
         total_loss += loss.item()
         n_batches += 1
-        
+
         predictions_list.append(predictions.detach().cpu().numpy())
         targets_list.append(targets.detach().cpu().numpy())
-    
+
     if n_batches == 0:
         return {"loss": 0.0, "spearman_corr": 0.0}
-    
+
     avg_loss = total_loss / n_batches
-    
+
     # Compute Spearman correlation
     all_preds = np.concatenate(predictions_list).flatten()
     all_targets = np.concatenate(targets_list).flatten()
-    
+
     spearman_corr = compute_spearman_safe(all_preds, all_targets)
-    
+
     return {
         "loss": avg_loss,
         "spearman_corr": spearman_corr,
@@ -370,7 +377,7 @@ def validate_unified(
 ) -> Dict[str, float]:
     """
     Unified validation function with consistent behavior.
-    
+
     Args:
         model: Model to validate
         dataloader: Validation data loader
@@ -379,27 +386,27 @@ def validate_unified(
         n_pairs: Number of ranking pairs to generate
         min_diff: Minimum ICF difference for pairs
         use_weighted_sampling: Use weighted sampling for pairs
-    
+
     Returns:
         Dictionary with 'loss', 'spearman_corr', and 'mae'
     """
     model.eval()
     total_loss = 0.0
     n_batches = 0
-    
+
     predictions_list = []
     targets_list = []
-    
+
     with torch.no_grad():
         for batch in dataloader:
             words, targets = prepare_batch(batch, device)
-            
+
             # Skip empty batches
             if len(words) == 0:
                 continue
-            
+
             predictions = model(words)
-            
+
             # Generate ranking pairs
             pairs, pair_target_diffs = generate_ranking_pairs(
                 targets.squeeze(1),
@@ -407,11 +414,13 @@ def validate_unified(
                 min_diff=min_diff,
                 use_weighted_sampling=use_weighted_sampling,
             )
-            
+
             if pairs is not None and len(pairs) > 0:
                 pairs = pairs.to(device)
-                pair_target_diffs = pair_target_diffs.to(device) if pair_target_diffs is not None else None
-            
+                pair_target_diffs = (
+                    pair_target_diffs.to(device) if pair_target_diffs is not None else None
+                )
+
             # Compute loss
             loss = criterion(
                 predictions,
@@ -419,25 +428,25 @@ def validate_unified(
                 pairs=pairs,
                 pair_target_diffs=pair_target_diffs,
             )
-            
+
             total_loss += loss.item()
             n_batches += 1
-            
+
             predictions_list.append(predictions.cpu().numpy())
             targets_list.append(targets.cpu().numpy())
-    
+
     if n_batches == 0:
         return {"loss": 0.0, "spearman_corr": 0.0, "mae": 0.0}
-    
+
     avg_loss = total_loss / n_batches
-    
+
     # Compute metrics
     all_preds = np.concatenate(predictions_list).flatten()
     all_targets = np.concatenate(targets_list).flatten()
-    
+
     spearman_corr = compute_spearman_safe(all_preds, all_targets)
     mae = float(np.mean(np.abs(all_preds - all_targets)))  # Convert numpy float to Python float
-    
+
     return {
         "loss": float(avg_loss),
         "spearman_corr": float(spearman_corr),
@@ -458,27 +467,25 @@ def save_checkpoint(
 ) -> None:
     """Save training checkpoint with all necessary state."""
     from pathlib import Path
-    import tempfile
-    import shutil
-    
+
     checkpoint = {
-        'epoch': epoch,
-        'model_state_dict': model.state_dict(),
-        'optimizer_state_dict': optimizer.state_dict(),
-        'best_spearman': best_spearman,
-        'best_model_state': best_model_state,
-        'history': history,
-        'args': args,
+        "epoch": epoch,
+        "model_state_dict": model.state_dict(),
+        "optimizer_state_dict": optimizer.state_dict(),
+        "best_spearman": best_spearman,
+        "best_model_state": best_model_state,
+        "history": history,
+        "args": args,
     }
-    
+
     if scheduler is not None:
-        checkpoint['scheduler_state_dict'] = scheduler.state_dict()
-    
+        checkpoint["scheduler_state_dict"] = scheduler.state_dict()
+
     # Atomic write: save to temp file first, then rename
     checkpoint_path = Path(checkpoint_path)
     checkpoint_path.parent.mkdir(parents=True, exist_ok=True)
-    temp_path = checkpoint_path.with_suffix('.tmp')
-    
+    temp_path = checkpoint_path.with_suffix(".tmp")
+
     try:
         torch.save(checkpoint, temp_path)
         # Atomic rename (works on same filesystem)
@@ -496,25 +503,26 @@ def load_checkpoint(
 ) -> Optional[Dict]:
     """Load checkpoint with validation and error handling."""
     from pathlib import Path
-    
+
     checkpoint_path = Path(checkpoint_path)
     if not checkpoint_path.exists():
         return None
-    
+
     try:
         checkpoint = torch.load(checkpoint_path, map_location=device, weights_only=False)
-        
+
         # Validate checkpoint structure
-        required_keys = ['epoch', 'model_state_dict', 'optimizer_state_dict']
+        required_keys = ["epoch", "model_state_dict", "optimizer_state_dict"]
         missing_keys = [key for key in required_keys if key not in checkpoint]
         if missing_keys:
             print(f"⚠️  Checkpoint missing required keys: {missing_keys}")
             return None
-        
+
         return checkpoint
     except Exception as e:
         print(f"⚠️  Could not load checkpoint: {e}")
         import traceback
+
         traceback.print_exc()
         return None
 
@@ -550,7 +558,7 @@ def create_scheduler(
 ) -> torch.optim.lr_scheduler._LRScheduler | torch.optim.lr_scheduler.ReduceLROnPlateau:
     """
     Create learning rate scheduler with consistent defaults.
-    
+
     Args:
         optimizer: Optimizer to schedule
         mode: For ReduceLROnPlateau: "max" or "min"
@@ -562,12 +570,13 @@ def create_scheduler(
         eta_min: For cosine: Minimum learning rate
         max_lr: For onecycle: Maximum learning rate
         total_steps: For onecycle: Total number of training steps
-    
+
     Returns:
         Learning rate scheduler
     """
     if scheduler_type == "cosine":
         from torch.optim.lr_scheduler import CosineAnnealingLR
+
         return CosineAnnealingLR(
             optimizer,
             T_max=T_max,
@@ -575,12 +584,13 @@ def create_scheduler(
         )
     elif scheduler_type == "onecycle":
         from torch.optim.lr_scheduler import OneCycleLR
+
         return OneCycleLR(
             optimizer,
             max_lr=max_lr,
             total_steps=total_steps,
             pct_start=0.3,  # 30% warmup
-            anneal_strategy='cos',
+            anneal_strategy="cos",
         )
     else:  # "plateau" (default)
         return torch.optim.lr_scheduler.ReduceLROnPlateau(

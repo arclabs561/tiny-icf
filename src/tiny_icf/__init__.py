@@ -4,6 +4,11 @@ This package provides models, losses, evaluation, and utilities for predicting
 Inverse Collection Frequency (ICF) from character-level features.
 """
 
+# This module intentionally re-exports many symbols via imports.
+# Ruff can't always infer that these imports are part of the public API.
+# See: https://docs.astral.sh/ruff/rules/unused-import/
+# ruff: noqa: F401
+
 __version__ = "0.1.0"
 
 # Core models
@@ -30,6 +35,7 @@ try:
         compute_gradient_norms,
         monitor_loss_components,
     )
+
     HAS_ADAPTIVE_LOSS = True
 except ImportError:
     HAS_ADAPTIVE_LOSS = False
@@ -42,6 +48,7 @@ try:
         compute_gradient_balance,
         log_loss_components,
     )
+
     HAS_LOSS_MONITORING = True
 except ImportError:
     HAS_LOSS_MONITORING = False
@@ -106,9 +113,27 @@ __all__ = [
     "SpearmanLoss",
     "CombinedLoss",
     # Adaptive losses (if available)
-    *(["RealTimeNormalizedLoss", "UncertaintyWeightedLoss", "compute_gradient_norms", "monitor_loss_components"] if HAS_ADAPTIVE_LOSS else []),
+    *(
+        [
+            "RealTimeNormalizedLoss",
+            "UncertaintyWeightedLoss",
+            "compute_gradient_norms",
+            "monitor_loss_components",
+        ]
+        if HAS_ADAPTIVE_LOSS
+        else []
+    ),
     # Loss monitoring (if available)
-    *(["compute_loss_component_metrics", "detect_loss_imbalance", "compute_gradient_balance", "log_loss_components"] if HAS_LOSS_MONITORING else []),
+    *(
+        [
+            "compute_loss_component_metrics",
+            "detect_loss_imbalance",
+            "compute_gradient_balance",
+            "log_loss_components",
+        ]
+        if HAS_LOSS_MONITORING
+        else []
+    ),
     # Data
     "WordICFDataset",
     "load_frequency_list",

@@ -4,10 +4,11 @@
 
 set -e
 
-SSH_HOST="213.173.111.79"
-SSH_PORT="34185"
-SSH_KEY="$HOME/.ssh/id_ed25519"
-REMOTE_DIR="/root/idf-est"
+SSH_HOST="${SSH_HOST:-CHANGE_ME}"
+SSH_PORT="${SSH_PORT:-22}"
+SSH_USER="${SSH_USER:-root}"
+SSH_KEY="${SSH_KEY:-$HOME/.ssh/id_ed25519}"
+REMOTE_DIR="${REMOTE_DIR:-/root/tiny-icf}"
 LOG_FILE="training_ephemeral.log"
 
 echo "=== Ephemeral Training Setup ==="
@@ -17,15 +18,16 @@ echo ""
 
 # Function to check if training is already running
 check_running() {
-    ssh -i "$SSH_KEY" -p "$SSH_PORT" root@"$SSH_HOST" \
+    ssh -i "$SSH_KEY" -p "$SSH_PORT" "${SSH_USER}@${SSH_HOST}" \
         "pgrep -f 'train_ephemeral_robust.py' > /dev/null 2>&1"
 }
 
 # Function to start training
 start_training() {
     echo "🚀 Starting training on remote server..."
-    ssh -i "$SSH_KEY" -p "$SSH_PORT" root@"$SSH_HOST" << 'ENDSSH'
-cd /root/idf-est
+    ssh -i "$SSH_KEY" -p "$SSH_PORT" "${SSH_USER}@${SSH_HOST}" << 'ENDSSH'
+REMOTE_DIR="${REMOTE_DIR:-/root/tiny-icf}"
+cd "$REMOTE_DIR"
 
 # Activate environment if needed
 if [ -d "venv" ]; then
@@ -59,8 +61,9 @@ ENDSSH
 # Function to monitor training
 monitor_training() {
     echo "📊 Monitoring training..."
-    ssh -i "$SSH_KEY" -p "$SSH_PORT" root@"$SSH_HOST" << 'ENDSSH'
-cd /root/idf-est
+    ssh -i "$SSH_KEY" -p "$SSH_PORT" "${SSH_USER}@${SSH_HOST}" << 'ENDSSH'
+REMOTE_DIR="${REMOTE_DIR:-/root/tiny-icf}"
+cd "$REMOTE_DIR"
 
 if [ -f training_ephemeral.pid ]; then
     PID=$(cat training_ephemeral.pid)
@@ -89,8 +92,9 @@ ENDSSH
 # Function to resume training
 resume_training() {
     echo "🔄 Resuming training from checkpoint..."
-    ssh -i "$SSH_KEY" -p "$SSH_PORT" root@"$SSH_HOST" << 'ENDSSH'
-cd /root/idf-est
+    ssh -i "$SSH_KEY" -p "$SSH_PORT" "${SSH_USER}@${SSH_HOST}" << 'ENDSSH'
+REMOTE_DIR="${REMOTE_DIR:-/root/tiny-icf}"
+cd "$REMOTE_DIR"
 
 if [ -d "venv" ]; then
     source venv/bin/activate
@@ -131,11 +135,11 @@ case "${1:-monitor}" in
         ;;
     stop)
         echo "🛑 Stopping training..."
-        ssh -i "$SSH_KEY" -p "$SSH_PORT" root@"$SSH_HOST" \
+        ssh -i "$SSH_KEY" -p "$SSH_PORT" "${SSH_USER}@${SSH_HOST}" \
             "pkill -f 'train_ephemeral_robust.py' && rm -f training_ephemeral.pid && echo '✓ Training stopped'"
         ;;
     logs)
-        ssh -i "$SSH_KEY" -p "$SSH_PORT" root@"$SSH_HOST" \
+        ssh -i "$SSH_KEY" -p "$SSH_PORT" "${SSH_USER}@${SSH_HOST}" \
             "cd $REMOTE_DIR && tail -f training_ephemeral.log"
         ;;
     *)

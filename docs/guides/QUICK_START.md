@@ -1,46 +1,57 @@
-# Quick Start Guide
+# Quick start
 
-## Best Models
+This repo is intentionally lean: it does **not** ship training data or trained checkpoints. You bring a frequency list (or download one), train, then predict/evaluate.
 
-### For General ICF Prediction
+## Install (uv)
+
 ```bash
-# Use rank_weight=5.0 model
-uv run scripts/evaluate_model.py \
-    --model models/model_diagnostic_rank5.pt \
-    --data data/word_frequency.csv
-```
-**Results:** Spearman=0.28, MAE=0.31, Jabberwocky=40%
-
-### For Rare Word Detection
-```bash
-# Use rank_weight=10.0 model
-uv run scripts/evaluate_model.py \
-    --model models/model_diagnostic_rank10.pt \
-    --data data/word_frequency.csv
-```
-**Results:** Spearman=0.24, MAE=0.33, Jabberwocky=80%
-
-## Training
-
-### Diagnostic Training
-```bash
-uv run scripts/train_diagnostic.py \
-    --data data/word_frequency.csv \
-    --epochs 30 \
-    --rank-weight 5.0 \
-    --output models/model.pt
+uv sync --extra dev
 ```
 
-### Compare All Experiments
+## Get data
+
+The training input is a CSV with `word,count` (header optional).
+
+Options:
+- Download helpers: `./scripts/download_data.sh` or `uv run scripts/download_datasets.py`
+- Provide your own frequency list
+
+More details: `DATA_AND_MODELS.md` and `DATA_PREP.md`.
+
+## Train
+
 ```bash
-./scripts/evaluate_all_experiments.sh
-python3 scripts/compare_experiments.py
+mkdir -p models
+
+uv run tiny-icf-train \
+  --data data/word_frequency.csv \
+  --epochs 50 \
+  --batch-size 64 \
+  --output models/model.pt
 ```
 
-## Results Summary
+## Predict
 
-- ✅ rank_weight=5.0: Best overall (Spearman=0.28, MAE=0.31)
-- ✅ rank_weight=10.0: Best rare words (Jabberwocky=80%)
-- ⚠️ Calibrated: Needs investigation
+```bash
+uv run tiny-icf-predict \
+  --model models/model.pt \
+  --words "the apple xylophone qzxbjk café 北京" \
+  --detailed
 
-See `FINAL_REPORT.md` for complete details.
+uv run tiny-icf-predict \
+  --model models/model.pt \
+  --words "the apple xylophone qzxbjk café 北京" \
+  --json
+```
+
+## Evaluate (including Jabberwocky Protocol)
+
+```bash
+uv run scripts/evaluate_model.py --model models/model.pt --data data/word_frequency.csv
+uv run scripts/evaluate_model.py --model models/model.pt --jabberwocky-only
+```
+
+## Next
+
+- `TRAINING_GUIDE.md` for training strategies/variants
+- `../PROJECT_OVERVIEW.md` for motivation + design context

@@ -35,10 +35,10 @@ Quick monitoring script to check:
 
 ```bash
 # SSH to server
-ssh -i ~/.ssh/id_ed25519 -p 37707 root@213.173.111.79
+ssh -i ~/.ssh/id_ed25519 -p <PORT> <USER>@<HOST>
 
 # Navigate to project
-cd /root/idf-est
+cd <REMOTE_DIR>
 
 # Install dependencies (if needed)
 apt-get update
@@ -103,8 +103,8 @@ From local machine:
 
 Or SSH and check directly:
 ```bash
-ssh -i ~/.ssh/id_ed25519 -p 37707 root@213.173.111.79
-cd /root/idf-est
+ssh -i ~/.ssh/id_ed25519 -p <PORT> <USER>@<HOST>
+cd <REMOTE_DIR>
 tail -f training_ephemeral.log
 ```
 

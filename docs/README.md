@@ -11,11 +11,15 @@ This directory contains organized documentation for the tiny-icf project.
 
 ## Essential Documentation
 
-The most important documentation remains in the project root:
-- `README.md` - Main project overview
-- `PROJECT_PURPOSE.md` - What this repo does and why
-- `EXPERIMENTS.md` - Experiment history and results
-- `EPHEMERAL_TRAINING.md` - Training on ephemeral environments
-- `JABBERWOCKY_PROTOCOL.md` - Evaluation protocol
-- `QUICK_START.md` - Quick start guide
-- `TRAINING_GUIDE.md` - Detailed training guide
+Start here (canonical paths):
+- `../README.md` - Main entrypoint (install, quick smoke-test, CLI)
+- `PROJECT_OVERVIEW.md` - The “why” and use cases
+- `guides/QUICK_START.md` - First real workflow
+- `guides/TRAINING_GUIDE.md` - Training strategies and variants
+- `guides/DATA_AND_MODELS.md` - Where to get data/models (repo is intentionally lean)
+- `guides/EPHEMERAL_TRAINING.md` - Training on ephemeral environments (RunPod)
+- `results/EXPERIMENTS.md` - Experiment log / results
+
+Jabberwocky Protocol is implemented in:
+- `../scripts/evaluate_model.py` (recommended for trained checkpoints)
+- `../tests/test_jabberwocky.py` (pytest-facing contract tests)

@@ -29,11 +29,11 @@ def trained_model_path():
         Path("models/model_local_final.pt"),
         Path("models/model.pt"),
     ]
-    
+
     for path in paths:
         if path.exists():
             return str(path)
-    
+
     return None
 
 
@@ -42,9 +42,8 @@ def trained_model(trained_model_path, device):
     """Load trained model if available."""
     if trained_model_path is None:
         pytest.skip("No trained model available")
-    
+
     model = UniversalICF().to(device)
     model.load_state_dict(torch.load(trained_model_path, map_location=device))
     model.eval()
     return model
-

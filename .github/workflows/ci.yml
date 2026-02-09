@@ -17,5 +17,9 @@ jobs:
       - uses: astral-sh/setup-uv@v3
       - name: install
         run: uv sync --extra dev
+      - name: lint
+        run: uv run ruff check .
+      - name: format
+        run: uv run black --check .
       - name: test
         run: uv run pytest -q

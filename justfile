@@ -4,14 +4,39 @@
 # RunPod connection details
 # NOTE: Update these if pod IP/port changes
 # Get from: RunPod console → Pod → SSH connection info
-runpod_host := "root@213.173.111.79"
-runpod_port := "37707"
+runpod_host := "root@CHANGE_ME"
+runpod_port := "22"
 runpod_key := "~/.ssh/id_ed25519"
-runpod_path := "/root/idf-est"
+runpod_path := "/root/tiny-icf"
 
 # Default recipe
 default:
     @just --list
+
+# -----------------------------------------------------------------------------
+# Local development (no RunPod)
+# -----------------------------------------------------------------------------
+
+# Run unit tests (fast, CPU-only by default)
+test:
+    #!/usr/bin/env bash
+    uv run pytest -q
+
+# Lint + format checks (mirrors CI)
+lint:
+    #!/usr/bin/env bash
+    uv run ruff check .
+    uv run black --check .
+
+# Auto-fix lint + formatting (scoped by tool config)
+fmt:
+    #!/usr/bin/env bash
+    uv run ruff check . --fix
+    uv run black .
+
+# One-shot local CI: lint + tests
+ci: lint test
+    @echo "✓ lint + tests passed"
 
 # Setup ephemeral pod (clean, install dependencies)
 setup-ephemeral:

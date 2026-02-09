@@ -2,7 +2,6 @@
 
 import argparse
 import json
-from pathlib import Path
 
 import torch
 
@@ -12,12 +11,12 @@ from tiny_icf.model import UniversalICF
 def export_weights(model_path: str, output_json: str, output_bin: str | None = None):
     """Export UniversalICF model weights to JSON and optional binary format."""
     device = torch.device("cpu")
-    
+
     # Load model
     model = UniversalICF().to(device)
     model.load_state_dict(torch.load(model_path, map_location=device))
     model.eval()
-    
+
     # Extract weights
     weights = {
         "emb": model.emb.weight.detach().cpu().tolist(),  # [256, 48]
@@ -38,18 +37,18 @@ def export_weights(model_path: str, output_json: str, output_bin: str | None = N
             "hidden_dim": 48,
             "kernel_sizes": [3, 5, 7],
             "max_length": 20,
-        }
+        },
     }
-    
+
     # Save JSON
     with open(output_json, "w") as f:
         json.dump(weights, f, indent=2)
-    
+
     print(f"✓ Exported weights to {output_json}")
     print(f"  Embedding: {len(weights['emb'])} x {len(weights['emb'][0])}")
-    print(f"  Conv layers: 3 (kernels 3, 5, 7)")
-    print(f"  Head layers: 2")
-    
+    print("  Conv layers: 3 (kernels 3, 5, 7)")
+    print("  Head layers: 2")
+
     # Save binary if requested
     if output_bin:
         # Flatten all weights into a single array
@@ -65,13 +64,14 @@ def export_weights(model_path: str, output_json: str, output_bin: str | None = N
         flat_weights.extend(weights["head_0_b"])
         flat_weights.extend([w for row in weights["head_3_w"] for w in row])
         flat_weights.extend(weights["head_3_b"])
-        
+
         # Write as binary float32
         import struct
+
         with open(output_bin, "wb") as f:
             for w in flat_weights:
                 f.write(struct.pack("f", w))
-        
+
         print(f"✓ Exported binary weights to {output_bin}")
         print(f"  Total floats: {len(flat_weights)}")
         print(f"  Size: {len(flat_weights) * 4 / 1024:.2f} KB")
@@ -82,9 +82,9 @@ def main():
     parser.add_argument("--model", type=str, required=True, help="Path to trained model")
     parser.add_argument("--json", type=str, default="rust/weights.json", help="Output JSON path")
     parser.add_argument("--bin", type=str, help="Output binary path (optional)")
-    
+
     args = parser.parse_args()
-    
+
     export_weights(args.model, args.json, args.bin)
 
 

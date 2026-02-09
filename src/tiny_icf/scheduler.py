@@ -7,11 +7,11 @@ from torch.optim.lr_scheduler import _LRScheduler
 class AdaptiveCosineAnnealingLR(_LRScheduler):
     """
     Cosine annealing with adaptive restarts based on validation metrics.
-    
+
     Restarts when validation metric plateaus, allowing the model to
     escape local minima and continue learning.
     """
-    
+
     def __init__(
         self,
         optimizer,
@@ -38,19 +38,19 @@ class AdaptiveCosineAnnealingLR(_LRScheduler):
         self.patience = patience
         self.metric = metric
         self.mode = mode
-        
+
         self.best_metric = float("inf") if mode == "min" else float("-inf")
         self.patience_counter = 0
         self.cycle = 0
         self.last_restart_epoch = 0
-        
+
         super().__init__(optimizer, last_epoch=-1)
-    
+
     def step(self, metrics: dict | None = None, epoch: int | None = None):
         """Step the scheduler, optionally with validation metrics."""
         if epoch is None:
             epoch = self.last_epoch + 1
-        
+
         # Check if we should restart
         if metrics is not None:
             current_metric = metrics.get(self.metric)
@@ -60,13 +60,13 @@ class AdaptiveCosineAnnealingLR(_LRScheduler):
                     improved = current_metric < (self.best_metric - self.restart_threshold)
                 else:
                     improved = current_metric > (self.best_metric + self.restart_threshold)
-                
+
                 if improved:
                     self.best_metric = current_metric
                     self.patience_counter = 0
                 else:
                     self.patience_counter += 1
-                
+
                 # Restart if patience exhausted
                 if self.patience_counter >= self.patience:
                     self.cycle += 1
@@ -75,7 +75,7 @@ class AdaptiveCosineAnnealingLR(_LRScheduler):
                     # Reset to initial LR
                     for param_group in self.optimizer.param_groups:
                         param_group["lr"] = param_group.get("initial_lr", param_group["lr"])
-        
+
         # Cosine annealing within cycle
         if epoch - self.last_restart_epoch < self.T_max:
             super().step(epoch=epoch)
@@ -85,12 +85,12 @@ class AdaptiveCosineAnnealingLR(_LRScheduler):
             self.last_restart_epoch = epoch
             for param_group in self.optimizer.param_groups:
                 param_group["lr"] = param_group.get("initial_lr", param_group["lr"])
-    
+
     def get_lr(self):
         """Compute learning rate using cosine annealing."""
         if self.last_epoch == 0:
             return [group["lr"] for group in self.optimizer.param_groups]
-        
+
         cycle_epoch = self.last_epoch - self.last_restart_epoch
         return [
             self.eta_min
@@ -104,11 +104,11 @@ class AdaptiveCosineAnnealingLR(_LRScheduler):
 class ReduceLROnPlateauSpearman(_LRScheduler):
     """
     Reduce learning rate when Spearman correlation plateaus.
-    
+
     Similar to ReduceLROnPlateau but specifically tuned for
     ranking metrics like Spearman correlation.
     """
-    
+
     def __init__(
         self,
         optimizer,
@@ -131,31 +131,31 @@ class ReduceLROnPlateauSpearman(_LRScheduler):
         """
         if mode not in ["min", "max"]:
             raise ValueError(f"mode must be 'min' or 'max', got {mode}")
-        
+
         self.mode = mode
         self.factor = factor
         self.patience = patience
         self.threshold = threshold
         self.min_lr = min_lr
         self.verbose = verbose
-        
+
         self.best = None
         self.num_bad_epochs = 0
         self.last_epoch = -1
-        
+
         super().__init__(optimizer)
-    
+
     def step(self, metrics: dict, epoch: int | None = None):
         """Step the scheduler based on validation metrics."""
         if epoch is None:
             epoch = self.last_epoch + 1
         self.last_epoch = epoch
-        
+
         # Get Spearman correlation
         spearman = metrics.get("spearman_corr")
         if spearman is None:
             return
-        
+
         # Check if improved
         if self.best is None:
             self.best = spearman
@@ -164,25 +164,24 @@ class ReduceLROnPlateauSpearman(_LRScheduler):
                 improved = spearman > (self.best + self.threshold)
             else:
                 improved = spearman < (self.best - self.threshold)
-            
+
             if improved:
                 self.best = spearman
                 self.num_bad_epochs = 0
             else:
                 self.num_bad_epochs += 1
-        
+
         # Reduce LR if plateau
         if self.num_bad_epochs >= self.patience:
             self._reduce_lr(epoch)
             self.num_bad_epochs = 0
-    
+
     def _reduce_lr(self, epoch: int):
         """Reduce learning rate for all parameter groups."""
         for i, param_group in enumerate(self.optimizer.param_groups):
             old_lr = param_group["lr"]
             new_lr = max(old_lr * self.factor, self.min_lr)
             param_group["lr"] = new_lr
-            
+
             if self.verbose:
                 print(f"Epoch {epoch}: Reducing LR of group {i} from {old_lr:.2e} to {new_lr:.2e}")
-

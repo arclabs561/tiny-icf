@@ -4,8 +4,9 @@
 
 set -e
 
-SSH_HOST="${SSH_HOST:-213.173.111.79}"
-SSH_PORT="${SSH_PORT:-34185}"
+SSH_HOST="${SSH_HOST:-CHANGE_ME}"
+SSH_PORT="${SSH_PORT:-22}"
+SSH_USER="${SSH_USER:-root}"
 SSH_KEY="${SSH_KEY:-$HOME/.ssh/id_ed25519}"
 
 echo "═══════════════════════════════════════════════════════════════"
@@ -14,8 +15,9 @@ echo "════════════════════════�
 echo "  Host: $SSH_HOST:$SSH_PORT"
 echo ""
 
-ssh -o StrictHostKeyChecking=no -i "$SSH_KEY" -p "$SSH_PORT" root@"$SSH_HOST" << ENDSSH
-cd /root/idf-est
+ssh -o StrictHostKeyChecking=no -i "$SSH_KEY" -p "$SSH_PORT" "${SSH_USER}@${SSH_HOST}" << 'ENDSSH'
+REMOTE_DIR="${REMOTE_DIR:-/root/tiny-icf}"
+cd "$REMOTE_DIR"
 export PATH="$HOME/.cargo/bin:$PATH"
 
 echo "🔍 CHECKING ENVIRONMENT"

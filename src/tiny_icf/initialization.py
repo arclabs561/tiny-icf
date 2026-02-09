@@ -1,6 +1,5 @@
 """Unified weight initialization utilities for all model variants."""
 
-import torch
 import torch.nn as nn
 
 
@@ -12,10 +11,10 @@ def init_weights_xavier(module: nn.Module, gain: float = 1.0) -> None:
             nn.init.constant_(module.bias, 0.0)
 
 
-def init_weights_kaiming(module: nn.Module, mode: str = 'fan_in') -> None:
+def init_weights_kaiming(module: nn.Module, mode: str = "fan_in") -> None:
     """Initialize weights using Kaiming (He) initialization."""
     if isinstance(module, (nn.Linear, nn.Conv1d)):
-        nn.init.kaiming_uniform_(module.weight, mode=mode, nonlinearity='relu')
+        nn.init.kaiming_uniform_(module.weight, mode=mode, nonlinearity="relu")
         if module.bias is not None:
             nn.init.constant_(module.bias, 0.0)
 
@@ -34,7 +33,7 @@ def init_final_layer(
 ) -> None:
     """
     Initialize final output layer to prevent initial saturation.
-    
+
     Args:
         linear: Final linear layer
         mean_target: Expected mean of output (e.g., mean ICF)
@@ -54,7 +53,7 @@ def init_model_weights(
 ) -> None:
     """
     Initialize all model weights with consistent strategy.
-    
+
     Args:
         model: Model to initialize
         mean_icf: Expected mean ICF value (for final layer bias)
@@ -66,10 +65,10 @@ def init_model_weights(
             init_embedding(module, std=embedding_std)
         elif isinstance(module, (nn.Linear, nn.Conv1d)):
             # Check if this is the final output layer
-            if 'head' in name.lower() and len(list(module.children())) == 0:
+            if "head" in name.lower() and len(list(module.children())) == 0:
                 # Try to find the actual final linear layer
                 # This is a heuristic - may need adjustment per model
-                if hasattr(module, 'weight') and module.out_features == 1:
+                if hasattr(module, "weight") and module.out_features == 1:
                     init_final_layer(module, mean_icf, final_layer_scale)
                 else:
                     init_weights_xavier(module)
@@ -81,4 +80,3 @@ def init_model_weights(
                 nn.init.constant_(module.weight, 1.0)
             if module.bias is not None:
                 nn.init.constant_(module.bias, 0.0)
-

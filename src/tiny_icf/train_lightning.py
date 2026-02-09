@@ -9,8 +9,14 @@ import torch
 
 try:
     from lightning import Trainer
-    from lightning.pytorch.callbacks import Callback, EarlyStopping, ModelCheckpoint, LearningRateMonitor
+    from lightning.pytorch.callbacks import (
+        Callback,
+        EarlyStopping,
+        ModelCheckpoint,
+        LearningRateMonitor,
+    )
     from lightning.pytorch.loggers import CSVLogger
+
     HAS_LIGHTNING = True
 except ImportError:
     HAS_LIGHTNING = False
@@ -32,19 +38,21 @@ def set_seed(seed: int = 42):
         torch.backends.cudnn.benchmark = False
 
 
-from lightning.pytorch.callbacks import Callback
+if HAS_LIGHTNING:
 
+    class CurriculumCallback(Callback):
+        """Callback to advance curriculum after each epoch."""
 
-class CurriculumCallback(Callback):
-    """Callback to advance curriculum after each epoch."""
-    
-    def __init__(self, datamodule: IDFDataModule):
-        super().__init__()
-        self.datamodule = datamodule
-    
-    def on_train_epoch_end(self, trainer, pl_module):
-        """Advance curriculum after each training epoch."""
-        self.datamodule.advance_curriculum()
+        def __init__(self, datamodule: IDFDataModule):
+            super().__init__()
+            self.datamodule = datamodule
+
+        def on_train_epoch_end(self, trainer, pl_module):
+            """Advance curriculum after each training epoch."""
+            self.datamodule.advance_curriculum()
+
+else:
+    CurriculumCallback = None  # type: ignore
 
 
 def main():
@@ -52,7 +60,7 @@ def main():
         print("❌ PyTorch Lightning is required for this script")
         print("   Install with: pip install lightning")
         return 1
-    
+
     parser = argparse.ArgumentParser(description="Lightning training for RunPod batch jobs")
     parser.add_argument("--data", type=Path, required=True)
     parser.add_argument("--output-dir", type=Path, default=Path("models"))
@@ -71,15 +79,17 @@ def main():
     parser.add_argument("--include-emojis", action="store_true", default=True)
     parser.add_argument("--early-stopping-patience", type=int, default=10)
     parser.add_argument("--devices", type=int, default=1, help="Number of GPUs")
-    parser.add_argument("--precision", type=str, default="16-mixed", help="16-mixed, 32, or bf16-mixed")
-    
+    parser.add_argument(
+        "--precision", type=str, default="16-mixed", help="16-mixed, 32, or bf16-mixed"
+    )
+
     args = parser.parse_args()
-    
+
     set_seed(42)
-    
+
     # Create output directory
     args.output_dir.mkdir(parents=True, exist_ok=True)
-    
+
     # Data module
     datamodule = IDFDataModule(
         data_path=args.data,
@@ -95,13 +105,13 @@ def main():
         include_symbols=args.include_symbols,
         include_emojis=args.include_emojis,
     )
-    
+
     # Model
     model = IDFLightningModule(
         learning_rate=args.lr,
         max_epochs=args.epochs,
     )
-    
+
     # Callbacks
     checkpoint_callback = ModelCheckpoint(
         dirpath=args.output_dir,
@@ -111,31 +121,31 @@ def main():
         save_top_k=3,
         save_last=True,
     )
-    
+
     early_stopping = EarlyStopping(
         monitor="val_loss",
         mode="min",
         patience=args.early_stopping_patience,
         verbose=True,
     )
-    
+
     lr_monitor = LearningRateMonitor(logging_interval="epoch")
-    
+
     # Logger
     logger = CSVLogger(save_dir=args.output_dir / "logs")
-    
+
     # Setup data first (needed for callback and to update curriculum schedule)
     datamodule.setup("fit")
-    
+
     # Update curriculum schedule with actual max_epochs
     if datamodule.curriculum:
         schedule = get_stage_schedule(args.epochs, args.curriculum_stages)
         datamodule.curriculum.schedule = schedule
-    
+
     # Add curriculum callback
     curriculum_callback = CurriculumCallback(datamodule)
     callbacks = [checkpoint_callback, early_stopping, lr_monitor, curriculum_callback]
-    
+
     # Trainer
     trainer = Trainer(
         accelerator="gpu" if torch.cuda.is_available() else "cpu",
@@ -149,28 +159,27 @@ def main():
         deterministic=True,
         benchmark=False,  # For reproducibility
     )
-    
+
     print("🚀 Starting Lightning training...")
     print(f"   Output: {args.output_dir}")
     print(f"   Devices: {args.devices}")
     print(f"   Precision: {args.precision}")
     print(f"   Batch size: {args.batch_size}")
     print(f"   Epochs: {args.epochs}")
-    
+
     # Train
     trainer.fit(model, datamodule)
-    
+
     # Save final model
     final_model_path = args.output_dir / "model_final.pt"
     torch.save(model.model.state_dict(), final_model_path)
-    print(f"\n✅ Training complete!")
+    print("\n✅ Training complete!")
     print(f"   Best model: {checkpoint_callback.best_model_path}")
     print(f"   Final model: {final_model_path}")
-    
+
     # Exit cleanly (important for non-interactive batch jobs)
     return 0
 
 
 if __name__ == "__main__":
     exit(main())
-

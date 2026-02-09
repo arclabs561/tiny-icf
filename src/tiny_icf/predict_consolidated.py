@@ -13,12 +13,10 @@ into a single interface with feature flags.
 """
 
 import torch
-import numpy as np
-from typing import Dict, List, Optional, Tuple, Any
-from pathlib import Path
+from typing import Dict, List, Any
 
 # Import from existing modules
-from tiny_icf.predict import predict_icf, word_to_bytes
+from tiny_icf.predict import predict_icf
 
 
 def predict(
@@ -31,7 +29,7 @@ def predict(
 ) -> Dict[str, Any]:
     """
     Unified prediction interface with feature flags.
-    
+
     Args:
         word: Input word
         model: Trained model
@@ -39,7 +37,7 @@ def predict(
         enhanced: If True, use enhanced prediction (interpretation, confidence)
         advanced: If True, use advanced prediction (all features)
         max_length: Maximum word length
-    
+
     Returns:
         Dictionary with prediction results
     """
@@ -48,16 +46,16 @@ def predict(
         # Get detailed prediction with all features
         result = predict_icf(model, word, device, return_details=True)
         # Rename 'icf_score' to 'icf' for consistency
-        if 'icf_score' in result:
-            result['icf'] = result.pop('icf_score')
+        if "icf_score" in result:
+            result["icf"] = result.pop("icf_score")
     else:
         # Basic prediction only
         icf_score = predict_icf(model, word, device, return_details=False)
         result = {
-            'word': word,
-            'icf': float(icf_score),
+            "word": word,
+            "icf": float(icf_score),
         }
-    
+
     return result
 
 
@@ -72,7 +70,7 @@ def predict_batch(
 ) -> List[Dict[str, Any]]:
     """
     Predict ICF for a batch of words.
-    
+
     Args:
         words: List of words
         model: Trained model
@@ -81,34 +79,33 @@ def predict_batch(
         advanced: If True, use advanced prediction
         batch_size: Batch size for processing
         max_length: Maximum word length
-    
+
     Returns:
         List of prediction dictionaries
     """
     results = []
-    
+
     # Process in batches
     for i in range(0, len(words), batch_size):
-        batch_words = words[i:i + batch_size]
-        
+        batch_words = words[i : i + batch_size]
+
         # Prepare batch
         byte_tensors = []
         for word in batch_words:
             byte_seq = word.encode("utf-8")[:max_length]
             padded = byte_seq + bytes(max_length - len(byte_seq))
             byte_tensors.append(torch.tensor(list(padded), dtype=torch.long))
-        
+
         byte_tensors = torch.stack(byte_tensors).to(device)
-        
+
         # Predict
         model.eval()
         with torch.no_grad():
             icf_scores = model(byte_tensors).cpu().numpy()
-        
+
         # Build results
         for word, icf in zip(batch_words, icf_scores):
             result = predict(word, model, device, enhanced, advanced, max_length)
             results.append(result)
-    
-    return results
 
+    return results
