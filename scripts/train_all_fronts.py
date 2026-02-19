@@ -99,6 +99,18 @@ def main() -> int:
     )
     p.add_argument("--devices", type=int, default=1)
     p.add_argument("--precision", type=str, default="16-mixed")
+    p.add_argument(
+        "--conv-channels",
+        type=int,
+        default=18,
+        help="CNN base conv channels (default 18 = 32K params; try 48 for ~77K base).",
+    )
+    p.add_argument(
+        "--hidden-dim",
+        type=int,
+        default=36,
+        help="CNN base hidden dim (default 36; try 96 for larger model).",
+    )
 
     p.add_argument("--multilingual", action="store_true", help="Compute ICF per-language for lang:word keys")
     p.add_argument(
@@ -179,6 +191,8 @@ def main() -> int:
         "num_eras": 5,
         "num_hygiene": 8,
         "temporal_decades": list(decades),
+        # Scheduler needs to know total epoch count for correct cosine decay.
+        "epochs": int(args.epochs),
         # Loss selection
         "use_unified_loss": True,
         "use_amoo": bool(args.use_amoo),
@@ -198,16 +212,26 @@ def main() -> int:
             "attention_heads": 3,
             "output_activation": "clamp",
             "sigmoid_temperature": 1.0,
+            "conv_channels": int(args.conv_channels),
+            "hidden_dim": int(args.hidden_dim),
         },
     }
 
     module = FlexibleIDFLightningModule(config=config, learning_rate=args.lr, weight_decay=args.weight_decay)
 
     # Optional init-from: load a UniversalICF checkpoint into the base model.
+    # Uses strict=False so a checkpoint trained with different conv_channels/hidden_dim
+    # is loaded partially (matching layers transferred, new layers stay random-init).
     if args.init_from is not None:
         base, _ckpt = load_model(args.init_from, device=torch.device("cpu"))
         if hasattr(module.model, "base"):
-            module.model.base.load_state_dict(base.state_dict())
+            result = module.model.base.load_state_dict(base.state_dict(), strict=False)
+            if result.missing_keys or result.unexpected_keys:
+                print(
+                    f"  init-from partial load: missing={len(result.missing_keys)} "
+                    f"unexpected={len(result.unexpected_keys)} keys"
+                    " (expected when conv_channels/hidden_dim differ)"
+                )
 
     ckpt_cb = ModelCheckpoint(
         dirpath=args.output_dir,
