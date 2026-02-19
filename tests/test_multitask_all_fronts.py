@@ -1,3 +1,4 @@
+import pytest
 import torch
 
 
@@ -67,6 +68,28 @@ def test_multitask_dataset_masks_and_hygiene_labels_collate():
     # historical_targets is dict[int, Tensor[batch, 1]]
     assert 1800 in batch["historical_targets"]
     assert tuple(batch["historical_targets"][1800].shape) == (2, 1)
+
+
+@pytest.mark.parametrize("conv_channels,hidden_dim", [(18, 36), (32, 64), (48, 96)])
+def test_multitask_model_capacity_variants(conv_channels: int, hidden_dim: int):
+    """Larger base models should construct and forward-pass without errors."""
+    from tiny_icf.model_multi_task import MultiTaskICF
+
+    model = MultiTaskICF(
+        output_tasks=["icf", "language", "era", "hygiene"],
+        num_languages=10,
+        num_eras=5,
+        num_hygiene=8,
+        temporal_decades=[],
+        base_model_kwargs={"conv_channels": conv_channels, "hidden_dim": hidden_dim},
+    )
+    total_params = sum(p.numel() for p in model.parameters())
+    assert total_params > 0
+
+    x = torch.randint(0, 256, (2, 20), dtype=torch.long)
+    out = model(x, return_all=True)
+    assert isinstance(out, dict)
+    assert "icf" in out and tuple(out["icf"].shape) == (2, 1)
 
 
 def test_unified_multitask_loss_accepts_hygiene():
