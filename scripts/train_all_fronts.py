@@ -145,6 +145,15 @@ def main() -> int:
     p.add_argument("--temporal-weight", type=float, default=0.3)
     p.add_argument("--hygiene-weight", type=float, default=0.2)
     p.add_argument("--use-amoo", action="store_true", help="Use adaptive weighting (AMOO-style)")
+    p.add_argument(
+        "--spearman-weight",
+        type=float,
+        default=2.0,
+        help=(
+            "Weight for Spearman soft-rank regularization in the ICF loss "
+            "(default 2.0; try 0.0 for Huber-only, 10.0 for rank-heavy)."
+        ),
+    )
 
     args = p.parse_args()
 
@@ -201,7 +210,8 @@ def main() -> int:
         "era_weight": float(args.era_weight),
         "temporal_weight": float(args.temporal_weight),
         "hygiene_weight": float(args.hygiene_weight),
-        # Pair sampling for ICF ranking component
+        # ICF ranking / Spearman regularizer
+        "spearman_weight": float(args.spearman_weight),
         "n_pairs": 16,
         "min_diff": 0.05,
         "use_weighted_sampling": True,
