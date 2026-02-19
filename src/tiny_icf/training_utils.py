@@ -49,54 +49,74 @@ def generate_ranking_pairs(
     else:
         targets_flat = targets  # Already [Batch]
 
-    # Vectorized pair generation (much faster than nested loops)
-    # Create all pairs at once using broadcasting
-    targets_expanded_i = targets_flat.unsqueeze(1)  # [Batch, 1]
-    targets_expanded_j = targets_flat.unsqueeze(0)  # [1, Batch]
+    # Efficient sampling approach (avoid O(batch^2) diff matrices):
+    # - sort targets
+    # - sample candidate position pairs in sorted order
+    # - filter by min_diff
+    # - optionally weight by diff
+    sorted_pos = torch.argsort(targets_flat)
+    sorted_targets = targets_flat[sorted_pos]
 
-    # Compute differences for all pairs: diff[i,j] = targets[j] - targets[i]
-    diff_matrix = targets_expanded_j - targets_expanded_i  # [Batch, Batch]
+    cur_min_diff = float(min_diff)
+    for attempt in range(5):
+        n_cand = max(int(n_pairs) * 50, 4096) * (2**attempt)
 
-    # Find valid pairs where target[i] < target[j] (diff > 0) and diff >= min_diff
-    valid_mask = (diff_matrix > min_diff) & (diff_matrix > 0)
+        a = torch.randint(0, batch_size, (n_cand,), device=targets.device)
+        b = torch.randint(0, batch_size, (n_cand,), device=targets.device)
+        lo = torch.minimum(a, b)
+        hi = torch.maximum(a, b)
+        neq = lo != hi
+        lo = lo[neq]
+        hi = hi[neq]
+        if lo.numel() == 0:
+            cur_min_diff *= 0.5
+            continue
 
-    # Get indices of valid pairs
-    valid_i, valid_j = torch.where(valid_mask)
+        diffs = sorted_targets[hi] - sorted_targets[lo]
+        keep = diffs >= cur_min_diff
+        if keep.any():
+            lo_k = lo[keep]
+            hi_k = hi[keep]
+            diffs_k = diffs[keep]
+            pairs_k = torch.stack([sorted_pos[lo_k], sorted_pos[hi_k]], dim=1)
 
-    if len(valid_i) == 0:
-        # Fallback: use pairs without min_diff requirement (just diff > 0)
-        valid_mask = diff_matrix > 0
-        valid_i, valid_j = torch.where(valid_mask)
+            if pairs_k.size(0) > n_pairs:
+                if use_weighted_sampling:
+                    probs = torch.softmax(diffs_k * 5.0, dim=0)
+                    idx = torch.multinomial(probs, num_samples=n_pairs, replacement=False)
+                else:
+                    idx = torch.randperm(pairs_k.size(0), device=targets.device)[:n_pairs]
+                return pairs_k[idx], diffs_k[idx]
 
-    if len(valid_i) == 0:
-        # No valid pairs found
-        empty_pairs = torch.empty((0, 2), dtype=torch.long, device=targets.device)
-        empty_diffs = torch.empty((0,), dtype=targets.dtype, device=targets.device)
-        return empty_pairs, empty_diffs
+            return pairs_k, diffs_k
 
-    # Extract differences for valid pairs
-    valid_diffs_tensor = diff_matrix[valid_i, valid_j]
+        cur_min_diff *= 0.5
 
-    # Stack into [N_pairs, 2] format
-    valid_pairs_tensor = torch.stack([valid_i, valid_j], dim=1)
+    # Final fallback: monotone pairs with diff > 0.
+    n_cand = max(int(n_pairs) * 10, 1024)
+    a = torch.randint(0, batch_size, (n_cand,), device=targets.device)
+    b = torch.randint(0, batch_size, (n_cand,), device=targets.device)
+    lo = torch.minimum(a, b)
+    hi = torch.maximum(a, b)
+    neq = lo != hi
+    lo = lo[neq]
+    hi = hi[neq]
+    if lo.numel() > 0:
+        diffs = sorted_targets[hi] - sorted_targets[lo]
+        keep = diffs > 0
+        if keep.any():
+            lo = lo[keep]
+            hi = hi[keep]
+            diffs = diffs[keep]
+            pairs = torch.stack([sorted_pos[lo], sorted_pos[hi]], dim=1)
+            if pairs.size(0) > n_pairs:
+                idx = torch.randperm(pairs.size(0), device=targets.device)[:n_pairs]
+                return pairs[idx], diffs[idx]
+            return pairs, diffs
 
-    # Sample pairs (valid_pairs_tensor and valid_diffs_tensor already computed)
-    if use_weighted_sampling and len(valid_pairs_tensor) > n_pairs:
-        # Weight by difference (larger differences = higher probability)
-        weights = valid_diffs_tensor / (valid_diffs_tensor.sum() + 1e-8)  # Avoid division by zero
-        indices = torch.multinomial(
-            weights, min(n_pairs, len(valid_pairs_tensor)), replacement=False
-        )
-        sampled_pairs = valid_pairs_tensor[indices]
-        sampled_diffs = valid_diffs_tensor[indices]
-    else:
-        # Uniform sampling or use all pairs if fewer than n_pairs
-        n_sample = min(n_pairs, len(valid_pairs_tensor))
-        indices = torch.randperm(len(valid_pairs_tensor), device=targets.device)[:n_sample]
-        sampled_pairs = valid_pairs_tensor[indices]
-        sampled_diffs = valid_diffs_tensor[indices]
-
-    return sampled_pairs, sampled_diffs
+    empty_pairs = torch.empty((0, 2), dtype=torch.long, device=targets.device)
+    empty_diffs = torch.empty((0,), dtype=targets.dtype, device=targets.device)
+    return empty_pairs, empty_diffs
 
 
 def prepare_batch(batch, device: torch.device) -> Tuple[torch.Tensor, torch.Tensor]:

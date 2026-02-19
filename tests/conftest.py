@@ -4,6 +4,7 @@ import pytest
 import torch
 from pathlib import Path
 
+from tiny_icf.checkpoint import load_model
 from tiny_icf.model import UniversalICF
 
 
@@ -43,7 +44,10 @@ def trained_model(trained_model_path, device):
     if trained_model_path is None:
         pytest.skip("No trained model available")
 
-    model = UniversalICF().to(device)
-    model.load_state_dict(torch.load(trained_model_path, map_location=device))
+    try:
+        model, _checkpoint = load_model(trained_model_path, device=device)
+    except Exception as e:  # pragma: no cover - depends on local artifacts
+        first_line = str(e).splitlines()[0] if str(e) else e.__class__.__name__
+        pytest.skip(f"Incompatible trained checkpoint {trained_model_path}: {first_line}")
     model.eval()
     return model

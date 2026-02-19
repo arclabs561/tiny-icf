@@ -6,6 +6,7 @@ import torch
 import numpy as np
 from pathlib import Path
 
+from tiny_icf.checkpoint import load_model
 from tiny_icf.model import UniversalICF
 from tiny_icf.eval import compute_metrics, evaluate_jabberwocky
 
@@ -65,10 +66,9 @@ def test_trained_model_performance():
     if not model_path.exists():
         pytest.skip("No trained model available for regression testing")
 
-    model = UniversalICF()
     try:
-        model.load_state_dict(torch.load(model_path, map_location="cpu"))
-    except RuntimeError as e:
+        model, _checkpoint = load_model(model_path, device=torch.device("cpu"))
+    except Exception as e:
         first_line = str(e).splitlines()[0] if str(e) else "RuntimeError"
         pytest.skip(f"Incompatible trained checkpoint {model_path}: {first_line}")
     model.eval()

@@ -167,8 +167,22 @@ def main():
     large_list = download_large_frequency_list(output_dir)
     
     if large_list:
-        print(f"\n✓ Successfully downloaded large frequency list: {large_list}")
-        print(f"  Use this for training: --data {large_list}")
+        # Standardize on the canonical filename used throughout the repo.
+        canonical = output_dir / "word_frequency.csv"
+        if large_list != canonical:
+            try:
+                import shutil
+
+                shutil.copyfile(large_list, canonical)
+                print(f"\n✓ Successfully downloaded large frequency list: {large_list}")
+                print(f"  Copied to canonical path: {canonical}")
+            except Exception as e:
+                print(f"\n✓ Successfully downloaded large frequency list: {large_list}")
+                print(f"  (Could not copy to {canonical}: {e})")
+        else:
+            print(f"\n✓ Successfully downloaded frequency list: {large_list}")
+
+        print(f"  Use this for training: --data {canonical if canonical.exists() else large_list}")
         return
     
     # Fallback: Download smaller lists and combine
@@ -177,7 +191,8 @@ def main():
     
     if downloaded:
         # Convert and combine
-        combined_path = output_dir / "combined_frequencies.csv"
+        # Keep the canonical filename used across scripts/README/docs.
+        combined_path = output_dir / "word_frequency.csv"
         all_word_counts = {}
         
         for input_path, format_type in downloaded:

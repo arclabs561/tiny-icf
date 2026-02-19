@@ -38,6 +38,19 @@ fmt:
 ci: lint test
     @echo "✓ lint + tests passed"
 
+# OOV calibration eval: composed vs gibberish (saturation + AUROC)
+oov N="2000" MODEL="models/universal_50k_20ep.pt" DATA="data/word_frequency.csv" FIX_CENTER="1.0" FIX_SCALE="0.25" FIX_CONF_WEIGHT="0.0" *args:
+    #!/usr/bin/env bash
+    uv run python scripts/evaluate_oov_calibration.py \
+        --model "{{MODEL}}" \
+        --data "{{DATA}}" \
+        --device cpu \
+        --n "{{N}}" \
+        --fix-center "{{FIX_CENTER}}" \
+        --fix-scale "{{FIX_SCALE}}" \
+        --fix-conf-weight "{{FIX_CONF_WEIGHT}}" \
+        {{args}}
+
 # Setup ephemeral pod (clean, install dependencies)
 setup-ephemeral:
     #!/usr/bin/env bash

@@ -1,5 +1,6 @@
 """Universal ICF Model: Byte-level CNN for word frequency estimation."""
 
+import math
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -14,7 +15,7 @@ class UniversalICF(nn.Module):
     - Byte embedding (256 -> 64)
     - Parallel 1D CNNs (kernel sizes 3, 5, 7) for morphological patterns
     - Global max pooling
-    - MLP head with sigmoid output (0.0 = common, 1.0 = rare)
+    - MLP head with bounded output (0.0 = common, 1.0 = rare)
 
     Total parameters: < 50k
     """
@@ -27,9 +28,19 @@ class UniversalICF(nn.Module):
         hidden_dim: int = 36,  # Further reduced from 48 to reduce capacity
         dropout: float = 0.4,  # Increased from 0.3 for stronger regularization
         use_attention: bool = False,  # Enable multi-head self-attention
-        attention_heads: int = 4,  # Number of attention heads
+        attention_heads: int = 3,  # Number of attention heads (must divide conv_channels*3)
+        output_activation: str = "clamp",  # 'clamp' (default), 'clamp_ste', or 'sigmoid'
+        sigmoid_temperature: float = 1.0,  # >1.0 = less saturation, <1.0 = sharper
     ):
         super().__init__()
+
+        if output_activation not in {"sigmoid", "clamp", "clamp_ste"}:
+            raise ValueError("output_activation must be 'sigmoid', 'clamp', or 'clamp_ste'")
+        if sigmoid_temperature <= 0:
+            raise ValueError("sigmoid_temperature must be > 0")
+
+        self.output_activation = output_activation
+        self.sigmoid_temperature = sigmoid_temperature
 
         # Byte-level embedding
         self.emb = nn.Embedding(vocab_size, emb_dim, padding_idx=0)
@@ -58,6 +69,11 @@ class UniversalICF(nn.Module):
             # Attention operates on concatenated conv outputs
             # Input: [batch, seq_len, conv_channels*3] (after concatenating c3, c5, c7)
             attention_dim = conv_channels * 3
+            if attention_dim % attention_heads != 0:
+                raise ValueError(
+                    f"attention_heads={attention_heads} must divide attention_dim={attention_dim} "
+                    f"(conv_channels*3)."
+                )
             self.attention: Optional[nn.MultiheadAttention] = nn.MultiheadAttention(
                 embed_dim=attention_dim,
                 num_heads=attention_heads,
@@ -70,8 +86,7 @@ class UniversalICF(nn.Module):
             self.attention = None  # type: ignore
 
         # MLP Head
-        # Use clipped linear instead of sigmoid to avoid saturation
-        # Sigmoid saturates at extremes, causing gradient vanishing
+        # Use a bounded output activation in forward().
         # Input size is now conv_channels * 9 (multi-scale pooling)
         self.head = nn.Sequential(
             nn.Linear(conv_channels * 9, hidden_dim),
@@ -163,11 +178,24 @@ class UniversalICF(nn.Module):
             feature_activations = self.head[1](hidden)  # [Batch, hidden_dim]
             hidden_dropped = self.head[2](feature_activations)  # [Batch, hidden_dim]
             raw_output = self.head[3](hidden_dropped)  # [Batch, 1]
-            output = torch.clamp(raw_output, 0.0, 1.0)  # [Batch, 1]
+            if self.output_activation == "sigmoid":
+                output = torch.sigmoid(raw_output / self.sigmoid_temperature)
+            elif self.output_activation == "clamp_ste":
+                clamped = torch.clamp(raw_output, 0.0, 1.0)
+                # Straight-through estimator: forward is clamped, backward is identity.
+                output = raw_output + (clamped - raw_output).detach()
+            else:
+                output = torch.clamp(raw_output, 0.0, 1.0)  # [Batch, 1]
         else:
             # Standard forward pass (backward compatible)
             raw_output = self.head(combined)  # [Batch, 1]
-            output = torch.clamp(raw_output, 0.0, 1.0)  # [Batch, 1]
+            if self.output_activation == "sigmoid":
+                output = torch.sigmoid(raw_output / self.sigmoid_temperature)
+            elif self.output_activation == "clamp_ste":
+                clamped = torch.clamp(raw_output, 0.0, 1.0)
+                output = raw_output + (clamped - raw_output).detach()
+            else:
+                output = torch.clamp(raw_output, 0.0, 1.0)  # [Batch, 1]
             feature_activations = None
 
         if return_features:
@@ -231,4 +259,9 @@ class UniversalICF(nn.Module):
                     # Scale weights smaller to prevent initial saturation
                     final_layer.weight.data *= 0.1
                     if final_layer.bias is not None:
-                        final_layer.bias.fill_(mean_icf)
+                        if self.output_activation == "sigmoid":
+                            # Initialize bias in logit space so sigmoid(bias) ≈ mean_icf.
+                            p = float(min(1.0 - 1e-4, max(1e-4, mean_icf)))
+                            final_layer.bias.fill_(math.log(p / (1.0 - p)))
+                        else:
+                            final_layer.bias.fill_(mean_icf)

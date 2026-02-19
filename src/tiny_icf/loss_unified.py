@@ -286,15 +286,19 @@ class ICFPredictionLoss(nn.Module):
         huber = F.smooth_l1_loss(predictions, targets, reduction="mean", beta=self.huber_delta)
 
         # Spearman loss (ranking correlation) with adaptive regularization and multiple methods
-        spearman = spearman_loss_tensor(
-            pred_1d,
-            target_1d,
-            regularization_strength=self.spearman_reg_strength,
-            method=self.spearman_method,
-            adaptive=self.spearman_adaptive,
-        )
-        if spearman.dim() > 0:
-            spearman = spearman.mean()
+        if int(pred_1d.numel()) < 2 or int(target_1d.numel()) < 2:
+            # No meaningful ranking signal for a singleton batch.
+            spearman = torch.tensor(0.0, device=predictions.device)
+        else:
+            spearman = spearman_loss_tensor(
+                pred_1d,
+                target_1d,
+                regularization_strength=self.spearman_reg_strength,
+                method=self.spearman_method,
+                adaptive=self.spearman_adaptive,
+            )
+            if spearman.dim() > 0:
+                spearman = spearman.mean()
 
         # Pairwise ranking loss (if pairs provided)
         rank_loss = torch.tensor(0.0, device=predictions.device)
@@ -473,8 +477,14 @@ class TemporalICFLoss(nn.Module):
         Returns:
             (total_loss, component_losses)
         """
+        # Normalize shapes to 1D where possible (prevents rank-relax shape surprises).
+        cur_pred = (
+            current_predictions.squeeze() if current_predictions.dim() > 1 else current_predictions
+        )
+        cur_tgt = current_targets.squeeze() if current_targets.dim() > 1 else current_targets
+
         # Base loss (current predictions)
-        base_loss = F.mse_loss(current_predictions, current_targets)
+        base_loss = F.mse_loss(cur_pred, cur_tgt)
 
         # Temporal consistency loss
         consistency_loss = torch.tensor(0.0, device=current_predictions.device)
@@ -482,21 +492,26 @@ class TemporalICFLoss(nn.Module):
             for decade in historical_predictions.keys():
                 if decade in historical_targets:
                     hist_pred = historical_predictions[decade]
+                    hist_pred = hist_pred.squeeze() if hist_pred.dim() > 1 else hist_pred
 
                     # Encourage smooth transitions
-                    consistency_loss += F.mse_loss(current_predictions, hist_pred)
+                    consistency_loss += F.mse_loss(cur_pred, hist_pred)
 
         # Ranking loss: predictions across decades should maintain relative order
         ranking_loss = torch.tensor(0.0, device=current_predictions.device)
         if historical_predictions:
             # Collect all predictions (current + historical)
-            all_predictions = [current_predictions]
-            all_targets = [current_targets]
+            all_predictions = [cur_pred]
+            all_targets = [cur_tgt]
 
             for decade in sorted(historical_predictions.keys()):
-                all_predictions.append(historical_predictions[decade])
+                hp = historical_predictions[decade]
+                hp = hp.squeeze() if hp.dim() > 1 else hp
+                all_predictions.append(hp)
                 if historical_targets and decade in historical_targets:
-                    all_targets.append(historical_targets[decade])
+                    ht = historical_targets[decade]
+                    ht = ht.squeeze() if ht.dim() > 1 else ht
+                    all_targets.append(ht)
 
             # Stack: [n_decades, batch]
             pred_stack = torch.stack(all_predictions)  # [n_decades, batch]
@@ -506,10 +521,11 @@ class TemporalICFLoss(nn.Module):
             # Should match ranking of targets
             for i in range(pred_stack.shape[1]):  # For each word in batch
                 pred_ranks = soft_rank_tensor(
-                    pred_stack[:, i], regularization_strength=self.regularization_strength
+                    pred_stack[:, i].squeeze(), regularization_strength=self.regularization_strength
                 )
                 target_ranks = soft_rank_tensor(
-                    target_stack[:, i], regularization_strength=self.regularization_strength
+                    target_stack[:, i].squeeze(),
+                    regularization_strength=self.regularization_strength,
                 )
 
                 # Spearman loss between prediction ranks and target ranks
@@ -682,6 +698,67 @@ class EraClassificationLoss(nn.Module):
 
 
 # ============================================================================
+# Token Hygiene (auxiliary classification)
+# ============================================================================
+
+
+class TokenHygieneLoss(nn.Module):
+    """
+    Loss for token hygiene classification (multi-class).
+
+    This is meant to teach the shared trunk to separate clean lexical tokens from
+    common contamination classes (URLs, code, numbers, mojibake, etc.).
+    """
+
+    def __init__(
+        self,
+        classification_weight: float = 1.0,
+        ranking_weight: float = 0.0,
+        regularization_strength: float = 1.0,
+        ignore_index: int = -100,
+    ):
+        super().__init__()
+        self.classification_weight = classification_weight
+        self.ranking_weight = ranking_weight
+        self.regularization_strength = regularization_strength
+        self.ignore_index = int(ignore_index)
+
+    def forward(
+        self, hygiene_logits: torch.Tensor, hygiene_targets: torch.Tensor
+    ) -> Tuple[torch.Tensor, Dict[str, torch.Tensor]]:
+        # Classification loss (cross-entropy).
+        classification_loss = F.cross_entropy(
+            hygiene_logits, hygiene_targets, ignore_index=self.ignore_index
+        )
+
+        # Optional ranking loss: target class should be top-ranked.
+        ranking_loss = torch.tensor(0.0, device=hygiene_logits.device)
+        if self.ranking_weight != 0.0:
+            probs = F.softmax(hygiene_logits, dim=-1)
+            for i in range(hygiene_logits.shape[0]):
+                tgt = int(hygiene_targets[i].item())
+                if tgt == self.ignore_index:
+                    continue
+                conf_ranks = soft_rank_tensor(
+                    probs[i], regularization_strength=self.regularization_strength
+                )
+                max_rank = conf_ranks.max()
+                target_rank = conf_ranks[tgt]
+                ranking_loss += F.mse_loss(target_rank.unsqueeze(0), max_rank.unsqueeze(0))
+            ranking_loss = ranking_loss / max(1, hygiene_logits.shape[0])
+
+        total_loss = (
+            self.classification_weight * classification_loss + self.ranking_weight * ranking_loss
+        )
+
+        components = {
+            "classification": classification_loss,
+            "ranking": ranking_loss,
+        }
+        return total_loss, components
+
+
+# ============================================================================
 # Unified Multi-Task Loss
 # ============================================================================
 
@@ -708,6 +785,7 @@ class UnifiedMultiTaskLoss(nn.Module):
         temporal_weight: float = 0.3,
         language_weight: float = 0.2,
         era_weight: float = 0.2,
+        hygiene_weight: float = 0.2,
         # AMOO settings
         use_amoo: bool = True,
         amoo_curvature_weight: float = 0.1,
@@ -741,6 +819,9 @@ class UnifiedMultiTaskLoss(nn.Module):
         self.era_loss = EraClassificationLoss(
             regularization_strength=ranking_reg_strength,
         )
+        self.hygiene_loss = TokenHygieneLoss(
+            regularization_strength=ranking_reg_strength,
+        )
 
         # Task weights (can be learned if use_amoo=True)
         if use_amoo:
@@ -752,6 +833,7 @@ class UnifiedMultiTaskLoss(nn.Module):
             self.register_parameter("temporal_weight", nn.Parameter(torch.tensor(temporal_weight)))
             self.register_parameter("language_weight", nn.Parameter(torch.tensor(language_weight)))
             self.register_parameter("era_weight", nn.Parameter(torch.tensor(era_weight)))
+            self.register_parameter("hygiene_weight", nn.Parameter(torch.tensor(hygiene_weight)))
         else:
             # Fixed weights
             self.register_buffer("icf_weight", torch.tensor(icf_weight))
@@ -759,6 +841,7 @@ class UnifiedMultiTaskLoss(nn.Module):
             self.register_buffer("temporal_weight", torch.tensor(temporal_weight))
             self.register_buffer("language_weight", torch.tensor(language_weight))
             self.register_buffer("era_weight", torch.tensor(era_weight))
+            self.register_buffer("hygiene_weight", torch.tensor(hygiene_weight))
 
     def forward(
         self,
@@ -782,6 +865,9 @@ class UnifiedMultiTaskLoss(nn.Module):
         # Era
         era_logits: Optional[torch.Tensor] = None,
         era_targets: Optional[torch.Tensor] = None,
+        # Hygiene
+        hygiene_logits: Optional[torch.Tensor] = None,
+        hygiene_targets: Optional[torch.Tensor] = None,
     ) -> Tuple[torch.Tensor, Dict[str, Any]]:
         """
         Compute unified multi-task loss.
@@ -834,6 +920,12 @@ class UnifiedMultiTaskLoss(nn.Module):
             task_losses["era"] = era_loss_val
             components["era"] = era_components
 
+        # Hygiene
+        if hygiene_logits is not None and hygiene_targets is not None:
+            hyg_loss, hyg_components = self.hygiene_loss(hygiene_logits, hygiene_targets)
+            task_losses["hygiene"] = hyg_loss
+            components["hygiene"] = hyg_components
+
         # Compute weighted sum
         if self.use_amoo and len(task_losses) > 1:
             # AMOO: adaptive weighting based on gradient alignment
@@ -844,6 +936,7 @@ class UnifiedMultiTaskLoss(nn.Module):
                 "temporal": self.temporal_weight,
                 "language": self.language_weight,
                 "era": self.era_weight,
+                "hygiene": self.hygiene_weight,
             }
 
             # Normalize weights
@@ -860,6 +953,7 @@ class UnifiedMultiTaskLoss(nn.Module):
                 "temporal": self.temporal_weight,
                 "language": self.language_weight,
                 "era": self.era_weight,
+                "hygiene": self.hygiene_weight,
             }
 
             # Compute total loss with proper type handling

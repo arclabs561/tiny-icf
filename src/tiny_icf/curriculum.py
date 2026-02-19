@@ -77,7 +77,7 @@ def get_stage_schedule(num_epochs: int, num_stages: int) -> List[int]:
     Returns:
         List mapping epoch -> stage number
     """
-    epochs_per_stage = num_epochs // num_stages
+    epochs_per_stage = max(1, num_epochs // num_stages)
 
     schedule = []
     for epoch in range(num_epochs):

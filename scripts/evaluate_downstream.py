@@ -33,8 +33,9 @@ from tiny_icf.data import (  # noqa: E402
     load_frequency_list,
     stratified_sample,
 )
+from tiny_icf.checkpoint import load_model  # noqa: E402
 from tiny_icf.eval import evaluate_jabberwocky, evaluate_on_dataset  # noqa: E402
-from tiny_icf.model import UniversalICF  # noqa: E402
+from tiny_icf.oov_calibration import DEFAULT_SATURATION_FIX, SaturationFixConfig  # noqa: E402
 
 
 def _auc_from_scores(y_true: np.ndarray, scores: np.ndarray) -> float:
@@ -60,7 +61,7 @@ def _auc_from_scores(y_true: np.ndarray, scores: np.ndarray) -> float:
     return (sum_ranks_pos - n_pos * (n_pos + 1) / 2.0) / (n_pos * n_neg)
 
 
-def _predict_words(model: UniversalICF, words: list[str], *, device: torch.device) -> np.ndarray:
+def _predict_words(model: torch.nn.Module, words: list[str], *, device: torch.device) -> np.ndarray:
     """Batch-predict ICF for a list of words."""
     pairs = [(w, 0.5) for w in words]  # dummy targets
     ds = WordICFDataset(pairs, max_length=20, augment_prob=0.0)
@@ -76,8 +77,15 @@ def _predict_words(model: UniversalICF, words: list[str], *, device: torch.devic
 
 def main() -> None:
     p = argparse.ArgumentParser(description="Downstream evaluation for tiny-icf models")
-    p.add_argument("--model", type=Path, required=True, help="Path to a trained model state_dict")
+    p.add_argument("--model", type=Path, required=True, help="Path to a trained model checkpoint")
     p.add_argument("--data", type=Path, required=True, help="Frequency CSV (word,count)")
+    p.add_argument(
+        "--icf-mode",
+        type=str,
+        default="log",
+        choices=["log", "rank"],
+        help="Target definition: 'log' (corpus ICF) or 'rank' (corpus-invariant quantile)",
+    )
     p.add_argument("--device", type=str, default="auto", help="auto/cpu/cuda")
     p.add_argument("--seed", type=int, default=42, help="Seed (matches training default)")
     p.add_argument(
@@ -91,6 +99,24 @@ def main() -> None:
         type=Path,
         default=None,
         help="Optional JSON output path (metrics only; no per-word dumps).",
+    )
+    p.add_argument(
+        "--fix-center",
+        type=float,
+        default=float(DEFAULT_SATURATION_FIX.center),
+        help="Saturation-fix center parameter (raw_output at which fixed score is ~0.5).",
+    )
+    p.add_argument(
+        "--fix-scale",
+        type=float,
+        default=float(DEFAULT_SATURATION_FIX.scale),
+        help="Saturation-fix scale parameter (smaller = steeper mapping).",
+    )
+    p.add_argument(
+        "--fix-conf-weight",
+        type=float,
+        default=float(DEFAULT_SATURATION_FIX.confidence_weight),
+        help="Optional saturation-fix confidence weight (0 disables).",
     )
 
     args = p.parse_args()
@@ -106,7 +132,7 @@ def main() -> None:
 
     # Data
     word_counts, total_tokens = load_frequency_list(args.data)
-    word_icf = compute_normalized_icf(word_counts, total_tokens)
+    word_icf = compute_normalized_icf(word_counts, total_tokens, mode=args.icf_mode)
     pairs = list(word_icf.items())
     words = [w for w, _ in pairs]
 
@@ -117,8 +143,7 @@ def main() -> None:
     val_samples = samples[split_idx:]
 
     # Model
-    model = UniversalICF().to(device)
-    model.load_state_dict(torch.load(args.model, map_location=device))
+    model, _checkpoint = load_model(args.model, device=device)
     model.eval()
 
     # Full-dataset metrics (in-sample; includes training words if you trained on this same file)
@@ -160,11 +185,22 @@ def main() -> None:
     gb_scores = np.concatenate([common_scores, gib_scores], axis=0)
     gibberish_vs_common_auc = _auc_from_scores(gb_labels, gb_scores)
 
-    # Jabberwocky Protocol
+    # Jabberwocky Protocol (raw model output + optional saturation fix for OOV tail)
     jab = evaluate_jabberwocky(model, device)
+    fix_config = SaturationFixConfig(
+        eps=float(DEFAULT_SATURATION_FIX.eps),
+        center=float(args.fix_center),
+        scale=float(args.fix_scale),
+        confidence_weight=float(args.fix_conf_weight),
+        confidence_center=float(DEFAULT_SATURATION_FIX.confidence_center),
+    )
+    jab_fix = evaluate_jabberwocky(
+        model, device, saturation_fix=True, saturation_fix_config=fix_config
+    )
 
     out: dict[str, Any] = {
         "device": str(device),
+        "icf_mode": str(args.icf_mode),
         "data_words": int(len(words)),
         "common_k": int(common_k),
         "full": {
@@ -184,6 +220,7 @@ def main() -> None:
         },
         "jabberwocky": {
             "pass_rate": float(jab.get("pass_rate", float("nan"))),
+            "pass_rate_saturation_fix": float(jab_fix.get("pass_rate", float("nan"))),
             "passed": int(jab.get("passed_count", 0)),
             "total": int(jab.get("total_count", 0)),
         },
@@ -195,6 +232,7 @@ def main() -> None:
     print(f"  common AUROC (top-{common_k}): {out['downstream']['common_auc']:.4f}")
     print(f"  gibberish-vs-common AUROC:     {out['downstream']['gibberish_vs_common_auc']:.4f}")
     print(f"  jabberwocky pass-rate:         {out['jabberwocky']['pass_rate']:.1%}")
+    print(f"  jabberwocky pass-rate (fix):   {out['jabberwocky']['pass_rate_saturation_fix']:.1%}")
 
     if args.output:
         import json
@@ -207,4 +245,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

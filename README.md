@@ -65,6 +65,60 @@ uv run python scripts/evaluate_with_baselines.py --model models/universal_50k_20
 
 # Downstream harness (OOV-style split + AUROC tasks + Jabberwocky)
 uv run python scripts/evaluate_downstream.py --model models/universal_50k_20ep.pt --data data/word_frequency.csv
+
+# OOV-focused prediction: avoid clamp-to-1.0 saturation on pseudo-words/composed words
+uv run tiny-icf-predict \
+  --model models/universal_50k_20ep.pt \
+  --words "unfriendliness flimjam qzxbjk" \
+  --detailed \
+  --saturation-fix
+
+# Optional: tune the saturation-fix parameters (defaults are Jabberwocky-safe)
+uv run tiny-icf-predict \
+  --model models/universal_50k_20ep.pt \
+  --words "unfriendliness flimjam qzxbjk" \
+  --detailed \
+  --saturation-fix \
+  --fix-center 1.23 \
+  --fix-scale 0.15 \
+  --fix-conf-weight 16
+
+# (For evaluation) you can also pass these knobs to the downstream harness:
+uv run python scripts/evaluate_downstream.py \
+  --model models/universal_50k_20ep.pt \
+  --data data/word_frequency.csv \
+  --fix-center 1.23 \
+  --fix-scale 0.15 \
+  --fix-conf-weight 16
+```
+
+## Multi-task training (cross-language + historical + token hygiene)
+
+If you want the model to learn **useful auxiliary signals** (and not just ICF), you can train a
+multi-task checkpoint that adds:
+- token hygiene classification (URLs/emails/code/numbers/mojibake/etc)
+- language + era classification (heuristic labels)
+- optional temporal ICF prediction across decades (historical n-grams)
+
+```bash
+mkdir -p data models
+
+# (Optional) build historical temporal targets (writes data/historical_ngrams/historical_icf_1gram.csv)
+bash scripts/setup_historical_data.sh
+
+# Train multi-task model and export a portable .pt checkpoint dict
+# If your frequency list is multilingual with lang:word keys, add: --multilingual
+uv run python scripts/train_all_fronts.py \
+  --data data/word_frequency.csv \
+  --hygiene --hygiene-noise-ratio 0.25 \
+  --temporal --temporal-data data/historical_ngrams/historical_icf_1gram.csv \
+  --export models/multitask_all_fronts.pt
+
+# Inspect learned auxiliary heads in prediction output (when --detailed is set)
+uv run tiny-icf-predict \
+  --model models/multitask_all_fronts.pt \
+  --words "http://example.com thou thee w00t qzxbjk" \
+  --detailed
 ```
 
 ## Data and models

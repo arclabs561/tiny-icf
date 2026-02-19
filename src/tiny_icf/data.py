@@ -14,12 +14,21 @@ from tiny_icf.preprocessing import filter_frequency_list
 
 
 def compute_normalized_icf(
-    word_counts: Dict[str, int], total_tokens: int, min_count: int = 5, multilingual: bool = False
+    word_counts: Dict[str, int],
+    total_tokens: int,
+    min_count: int = 5,
+    multilingual: bool = False,
+    *,
+    mode: str = "log",
 ) -> Dict[str, float]:
     """
     Compute normalized ICF for all words with edge case handling.
 
-    Formula: y = (log(Total_Tokens + 1) - log(Count + 1)) / log(Total_Tokens + 1)
+    Modes:
+    - mode="log" (default): corpus-ICF style normalization
+        y = log((Total_Tokens + 1) / (Count + 1)) / log(Total_Tokens + 1)
+    - mode="rank": corpus-invariant quantile target
+        y = rank(count, descending) / (N - 1)
 
     Uses add-1 smoothing to handle edge cases (zero division, count = total).
 
@@ -35,12 +44,40 @@ def compute_normalized_icf(
     Returns:
         Dictionary mapping words to normalized ICF scores (0.0=common, 1.0=rare)
     """
+    if mode not in {"log", "rank"}:
+        raise ValueError("mode must be 'log' or 'rank'")
+
     if multilingual:
         # Use per-language ICF computation
         from tiny_icf.data_multilingual import compute_icf_per_language
 
         icf_scores, _ = compute_icf_per_language(word_counts, min_count)
         return icf_scores
+
+    if mode == "rank":
+        # Corpus-invariant target: rank-normalized rarity.
+        items = list(word_counts.items())
+        n = len(items)
+        if n == 0:
+            return {}
+        if n == 1:
+            word, count = items[0]
+            return {word: 1.0 if count < min_count else 0.5}
+
+        counts = np.array([c for _, c in items], dtype=np.float64)
+        # Descending order: most common => rank 0 (ICF 0.0), rarest => rank n-1 (ICF 1.0).
+        order = np.argsort(-counts, kind="mergesort")
+        ranks = np.empty(n, dtype=np.float64)
+        ranks[order] = np.arange(n, dtype=np.float64)
+        icf_vals = ranks / float(n - 1)
+
+        out: Dict[str, float] = {}
+        for i, (word, count) in enumerate(items):
+            if count < min_count:
+                out[word] = 1.0
+            else:
+                out[word] = float(icf_vals[i])
+        return out
 
     # Single-corpus computation with smoothing
     # Add 1 to prevent edge cases: log(1) = 0, count = total_tokens
@@ -136,6 +173,7 @@ def stratified_sample(
     head_prob: float = 0.4,
     body_prob: float = 0.3,
     use_token_frequency: bool = False,
+    max_samples: Optional[int] = None,
 ) -> List[Tuple[str, float]]:
     """
     Create stratified sample from word ICF dictionary.
@@ -149,6 +187,7 @@ def stratified_sample(
         word_icf: Dictionary mapping words to ICF scores
         word_counts: Optional dictionary mapping words to token counts (for frequency-weighted sampling)
         use_token_frequency: If True, sample weighted by token frequency (matches real distribution)
+        max_samples: Optional cap on total returned samples (helps on very large corpora)
 
     Returns:
         List of (word, icf_score) tuples
@@ -180,11 +219,25 @@ def stratified_sample(
 
         return [items[i] for i in indices]
 
-    # Calculate sample sizes
-    n_total = int(len(sorted_words) * (head_prob + body_prob + (1 - head_prob - body_prob)))
-    n_head = int(n_total * head_prob)
-    n_body = int(n_total * body_prob)
-    n_tail = n_total - n_head - n_body
+    # Calculate sample sizes.
+    #
+    # - If max_samples is unset, preserve the historical behavior: the sample budget
+    #   is implicitly tied to the full vocab size, and per-stratum sampling is then
+    #   clamped by pool sizes via `min(n_samples, len(items))`.
+    # - If max_samples is set, treat it as a hard cap and push any leftover budget
+    #   (after head/body clamping) into the tail so total samples ~= max_samples.
+    if max_samples is None or int(max_samples) <= 0:
+        n_total = int(len(sorted_words))
+        n_head = int(n_total * head_prob)
+        n_body = int(n_total * body_prob)
+        n_tail = n_total - n_head - n_body
+    else:
+        n_total = int(min(int(max_samples), len(sorted_words)))
+        n_head_desired = int(n_total * head_prob)
+        n_body_desired = int(n_total * body_prob)
+        n_head = min(n_head_desired, len(head))
+        n_body = min(n_body_desired, len(body))
+        n_tail = max(0, n_total - n_head - n_body)
 
     # Get weights if using token frequency
     head_weights = None

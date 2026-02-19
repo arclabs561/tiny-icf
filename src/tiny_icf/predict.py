@@ -8,8 +8,13 @@ import numpy as np
 import torch
 import unicodedata
 
-from tiny_icf.model import UniversalICF
+from tiny_icf.checkpoint import load_model
 from tiny_icf.language_detection import detect_languages, format_languages
+from tiny_icf.oov_calibration import (
+    DEFAULT_SATURATION_FIX,
+    SaturationFixConfig,
+    apply_saturation_fix,
+)
 from tiny_icf.temporal_detection import estimate_usage_period, format_temporal_analysis
 
 
@@ -37,13 +42,15 @@ def word_to_bytes(word: str, max_length: int = 20) -> torch.Tensor:
 
 
 def predict_icf(
-    model: UniversalICF,
+    model: torch.nn.Module,
     word: str,
     device: torch.device,
     return_details: bool = False,
     reference_scores: Optional[np.ndarray] = None,
     *,
     max_length: int = 20,
+    saturation_fix: bool = False,
+    saturation_fix_config: SaturationFixConfig = DEFAULT_SATURATION_FIX,
 ) -> float | dict:
     """
     Predict ICF score for a single word.
@@ -72,20 +79,34 @@ def predict_icf(
             if return_details:
                 prediction, features = model(byte_tensor, return_features=True)
                 # prediction is [1, 1] tensor, extract scalar
-                icf_score = float(prediction.squeeze().item())
+                icf_score_model = float(prediction.squeeze().item())
                 raw_output = float(features.get("raw_output", prediction).squeeze().item())
                 confidence = float(features.get("confidence", torch.tensor(0.5)).squeeze().item())
             else:
                 prediction = model(byte_tensor)
-                icf_score = float(prediction.squeeze().item())
+                icf_score_model = float(prediction.squeeze().item())
                 raw_output = None
                 confidence = None
+                features = {}
         except (TypeError, IndexError, AttributeError):
             # Model doesn't support return_features, use basic prediction
             prediction = model(byte_tensor)
-            icf_score = float(prediction.squeeze().item())
-            raw_output = icf_score
+            icf_score_model = float(prediction.squeeze().item())
+            raw_output = icf_score_model
             confidence = 0.5  # Default confidence
+            features = {}
+
+    icf_score = icf_score_model
+    saturation_fix_applied = False
+    if saturation_fix:
+        # If we don't have raw_output (no return_features support), we can't fix saturation.
+        if raw_output is not None:
+            icf_score, saturation_fix_applied = apply_saturation_fix(
+                icf_score=icf_score_model,
+                raw_output=float(raw_output),
+                confidence=float(confidence) if confidence is not None else None,
+                config=saturation_fix_config,
+            )
 
     if not return_details:
         return icf_score
@@ -106,10 +127,12 @@ def predict_icf(
 
     result = {
         "icf_score": icf_score,
+        "icf_score_model": icf_score_model,
         "interpretation": interpretation,
         "category": category,
         "confidence": confidence if confidence is not None else 0.5,
         "raw_output": raw_output if raw_output is not None else icf_score,
+        "saturation_fix_applied": bool(saturation_fix_applied),
         "word": word,
     }
 
@@ -125,6 +148,66 @@ def predict_icf(
     # Add temporal/era detection
     temporal = estimate_usage_period(word, icf_score=icf_score)
     result["temporal"] = format_temporal_analysis(temporal)
+
+    # If the model exposes learned auxiliary heads (MultiTaskICF), surface them.
+    if isinstance(features, dict) and features:
+        try:
+            from tiny_icf.data_multi_task import ERA_CODES, HYGIENE_CODES, LANGUAGE_CODES
+        except Exception:
+            ERA_CODES = ["archaic", "early_modern", "modern", "contemporary", "neologism"]
+            HYGIENE_CODES = [
+                "clean_word",
+                "url",
+                "email",
+                "code",
+                "html_entity",
+                "encoding_error",
+                "number",
+                "gibberish",
+            ]
+            LANGUAGE_CODES = ["en", "es", "fr", "de", "it", "pt", "ru", "ko", "zh", "ja"]
+
+        def _topk_from_logits(logits: torch.Tensor, labels: list[str], k: int = 3) -> list[dict]:
+            probs = torch.softmax(logits.squeeze(0), dim=-1)
+            kk = min(k, int(probs.numel()))
+            vals, idx = torch.topk(probs, k=kk)
+            out = []
+            for v, i in zip(vals.tolist(), idx.tolist()):
+                name = labels[int(i)] if 0 <= int(i) < len(labels) else str(int(i))
+                out.append({"label": name, "p": float(v)})
+            return out
+
+        if "language_logits" in features:
+            try:
+                result["learned_language"] = _topk_from_logits(
+                    features["language_logits"], list(LANGUAGE_CODES), k=3
+                )
+            except Exception:
+                pass
+        if "era_logits" in features:
+            try:
+                result["learned_era"] = _topk_from_logits(
+                    features["era_logits"], list(ERA_CODES), k=3
+                )
+            except Exception:
+                pass
+        if "hygiene_logits" in features:
+            try:
+                result["learned_hygiene"] = _topk_from_logits(
+                    features["hygiene_logits"], list(HYGIENE_CODES), k=3
+                )
+            except Exception:
+                pass
+        if "temporal_logits" in features and hasattr(model, "temporal_decades"):
+            try:
+                decades = list(getattr(model, "temporal_decades"))
+                vec = features["temporal_logits"].squeeze(0)
+                if vec.dim() == 1 and len(decades) == int(vec.numel()):
+                    result["learned_temporal_icf"] = {
+                        str(int(dec)): float(vec[i].item()) for i, dec in enumerate(decades)
+                    }
+            except Exception:
+                pass
 
     return result
 
@@ -144,6 +227,29 @@ def main():
         "--detailed", action="store_true", help="Return detailed predictions with confidence"
     )
     parser.add_argument("--json", action="store_true", help="Output as JSON")
+    parser.add_argument(
+        "--saturation-fix",
+        action="store_true",
+        help="Optional OOV-focused fix: unsaturate clamp-to-1.0 outputs using raw_output.",
+    )
+    parser.add_argument(
+        "--fix-center",
+        type=float,
+        default=float(DEFAULT_SATURATION_FIX.center),
+        help="Saturation-fix center parameter (raw_output at which fixed score is ~0.5).",
+    )
+    parser.add_argument(
+        "--fix-scale",
+        type=float,
+        default=float(DEFAULT_SATURATION_FIX.scale),
+        help="Saturation-fix scale parameter (smaller = steeper mapping).",
+    )
+    parser.add_argument(
+        "--fix-conf-weight",
+        type=float,
+        default=float(DEFAULT_SATURATION_FIX.confidence_weight),
+        help="Optional saturation-fix confidence weight (0 disables).",
+    )
 
     args = parser.parse_args()
 
@@ -154,24 +260,43 @@ def main():
         device = torch.device(args.device)
 
     # Load model
-    model = UniversalICF().to(device)
-    model.load_state_dict(torch.load(args.model, map_location=device))
+    model, _checkpoint = load_model(args.model, device=device)
     model.eval()
 
     # Parse words (handle both string and list)
     words = args.words.split() if isinstance(args.words, str) else args.words
+
+    fix_config = SaturationFixConfig(
+        eps=float(DEFAULT_SATURATION_FIX.eps),
+        center=float(args.fix_center),
+        scale=float(args.fix_scale),
+        confidence_weight=float(args.fix_conf_weight),
+        confidence_center=float(DEFAULT_SATURATION_FIX.confidence_center),
+    )
 
     # Predict
     results = []
     for word in words:
         if args.detailed or args.json:
             result = predict_icf(
-                model, word, device, return_details=True, max_length=args.max_length
+                model,
+                word,
+                device,
+                return_details=True,
+                max_length=args.max_length,
+                saturation_fix=bool(args.saturation_fix),
+                saturation_fix_config=fix_config,
             )
             results.append(result)
         else:
             score = predict_icf(
-                model, word, device, return_details=False, max_length=args.max_length
+                model,
+                word,
+                device,
+                return_details=False,
+                max_length=args.max_length,
+                saturation_fix=bool(args.saturation_fix),
+                saturation_fix_config=fix_config,
             )
             result = {
                 "word": word,

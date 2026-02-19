@@ -63,9 +63,9 @@ echo ""
 echo "Step 3: Exporting Weights for Rust"
 echo "-" | head -c 80; echo
 python -m tiny_icf.export_nano_weights \
-    "$MODEL_OUTPUT" \
-    "rust/weights.json" \
-    "rust/weights.bin"
+    --model "$MODEL_OUTPUT" \
+    --json rust/weights.json \
+    --bin rust/weights.bin
 
 if [ -f "rust/weights.json" ]; then
     echo "✓ Weights exported: rust/weights.json"

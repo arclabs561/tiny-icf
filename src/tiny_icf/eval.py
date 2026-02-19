@@ -4,6 +4,12 @@ import numpy as np
 import torch
 from typing import Dict, List, Tuple, Optional, Any
 
+from tiny_icf.oov_calibration import (
+    DEFAULT_SATURATION_FIX,
+    SaturationFixConfig,
+    apply_saturation_fix,
+)
+
 try:
     from scipy.stats import spearmanr, pearsonr, kendalltau
 
@@ -186,6 +192,9 @@ def compute_metrics(
         try:
             calib_metrics = compute_calibration_metrics(predictions, targets, n_bins=10)
             metrics.update(calib_metrics)
+            # Backward-compatible alias used by older scripts.
+            # Prefer ECE when available.
+            metrics["calibration_error"] = float(metrics.get("ece", 0.0))
         except Exception:
             # Fallback to simple calibration error
             metrics["calibration_error"] = expected_calibration_error(
@@ -270,6 +279,9 @@ def evaluate_jabberwocky(
     model: torch.nn.Module,
     device: torch.device,
     test_cases: Optional[List[Tuple[str, float, float, str]]] = None,
+    *,
+    saturation_fix: bool = False,
+    saturation_fix_config: SaturationFixConfig = DEFAULT_SATURATION_FIX,
 ) -> Dict[str, Any]:
     """
     Evaluate model on Jabberwocky Protocol (pseudo-words).
@@ -295,20 +307,44 @@ def evaluate_jabberwocky(
     results = []
 
     for word, min_icf, max_icf, description in test_cases:
-        # Convert word to bytes
-        byte_seq = word.encode("utf-8")[:20]
-        padded = byte_seq + bytes(20 - len(byte_seq))
-        byte_tensor = torch.tensor(list(padded), dtype=torch.long).unsqueeze(0).to(device)
+        # Convert word to bytes (character-boundary safe)
+        from tiny_icf.predict import word_to_bytes
 
-        # Predict
+        byte_tensor = word_to_bytes(word, max_length=20).to(device)
+
+        # Predict (optionally with saturation fix)
         with torch.no_grad():
-            icf = model(byte_tensor).item()
+            icf_model = float(model(byte_tensor).item())
+            icf = icf_model
+            raw_output = None
+            applied = False
+            if saturation_fix:
+                try:
+                    pred, feats = model(byte_tensor, return_features=True)
+                    icf_model = float(pred.squeeze().item())
+                    raw_output = float(feats.get("raw_output", pred).squeeze().item())
+                    confidence = float(
+                        feats.get("confidence", pred.new_tensor(0.5)).squeeze().item()
+                    )
+                    icf, applied = apply_saturation_fix(
+                        icf_score=icf_model,
+                        raw_output=raw_output,
+                        confidence=confidence,
+                        config=saturation_fix_config,
+                    )
+                except Exception:
+                    # Fall back to plain model output.
+                    raw_output = None
+                    applied = False
 
         passed = min_icf <= icf <= max_icf
         results.append(
             {
                 "word": word,
                 "predicted": icf,
+                "predicted_model": icf_model,
+                "raw_output": raw_output,
+                "saturation_fix_applied": bool(applied),
                 "min_icf": min_icf,
                 "max_icf": max_icf,
                 "passed": passed,

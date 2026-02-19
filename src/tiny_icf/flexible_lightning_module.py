@@ -84,6 +84,11 @@ class FlexibleIDFLightningModule(LightningModule):
                 self.model = MultiTaskICF(
                     base_model=None,  # Create new base
                     output_tasks=output_tasks,
+                    num_languages=int(config.get("num_languages", 10)),
+                    num_eras=int(config.get("num_eras", 5)),
+                    num_hygiene=int(config.get("num_hygiene", 8)),
+                    temporal_decades=config.get("temporal_decades", (1800, 1900, 2000)),
+                    base_model_kwargs=config.get("base_model_kwargs", None),
                 )
                 self.use_multi_task_model = True
             except ImportError:
@@ -183,6 +188,7 @@ class FlexibleIDFLightningModule(LightningModule):
                 temporal_weight=config.get("temporal_weight", 0.3),
                 language_weight=config.get("language_weight", 0.2),
                 era_weight=config.get("era_weight", 0.2),
+                hygiene_weight=config.get("hygiene_weight", 0.2),
                 use_amoo=config.get("use_amoo", True),
                 amoo_curvature_weight=config.get("amoo_curvature_weight", 0.1),
                 icf_spearman_weight=config.get("spearman_weight", 10.0),
@@ -375,47 +381,120 @@ class FlexibleIDFLightningModule(LightningModule):
 
         elif self.use_unified_loss:
             # Unified multi-task loss
-            n_pairs = min(len(icf_targets), self.n_pairs)
-            pairs, pair_target_diffs = generate_ranking_pairs(
-                icf_targets.squeeze(1) if icf_targets.dim() > 1 else icf_targets,
-                n_pairs=n_pairs,
-                min_diff=self.min_diff,
-                use_weighted_sampling=self.use_weighted_sampling,
-            )
+            icf_mask = batch.get("icf_mask") if isinstance(batch, dict) else None
+            if icf_mask is not None:
+                icf_mask = icf_mask.to(torch.bool).view(-1)
+                icf_idx = torch.where(icf_mask)[0]
+            else:
+                icf_idx = torch.arange(len(icf_targets), device=icf_targets.device)
 
-            if pairs is not None and len(pairs) > 0:
-                pairs = pairs.to(predictions.device)
-                pair_target_diffs = (
-                    pair_target_diffs.to(predictions.device)
-                    if pair_target_diffs is not None
-                    else None
+            # Subset ICF-supervised rows (clean tokens).
+            icf_predictions = predictions[icf_idx] if len(icf_idx) > 0 else None
+            icf_targets_sub = icf_targets[icf_idx] if len(icf_idx) > 0 else None
+
+            # Ranking pairs only within the supervised subset.
+            pairs = None
+            if icf_targets_sub is not None and len(icf_idx) >= 2:
+                n_pairs = min(len(icf_targets_sub), self.n_pairs)
+                pairs_rel, _pair_target_diffs = generate_ranking_pairs(
+                    icf_targets_sub.squeeze(1) if icf_targets_sub.dim() > 1 else icf_targets_sub,
+                    n_pairs=n_pairs,
+                    min_diff=self.min_diff,
+                    use_weighted_sampling=self.use_weighted_sampling,
                 )
+                if pairs_rel is not None and len(pairs_rel) > 0:
+                    pairs = pairs_rel.to(predictions.device)
 
-            # Call unified loss with all task data (if available)
+            # Aux logits / targets.
+            language_logits = (
+                model_outputs.get("language")
+                if self.use_multi_task_model and isinstance(model_outputs, dict)
+                else (batch.get("language_logits") if isinstance(batch, dict) else None)
+            )
+            language_targets = batch.get("language_targets") if isinstance(batch, dict) else None
+            era_logits = (
+                model_outputs.get("era")
+                if self.use_multi_task_model and isinstance(model_outputs, dict)
+                else (batch.get("era_logits") if isinstance(batch, dict) else None)
+            )
+            era_targets = batch.get("era_targets") if isinstance(batch, dict) else None
+            hygiene_logits = (
+                model_outputs.get("hygiene")
+                if self.use_multi_task_model and isinstance(model_outputs, dict)
+                else (batch.get("hygiene_logits") if isinstance(batch, dict) else None)
+            )
+            hygiene_targets = batch.get("hygiene_targets") if isinstance(batch, dict) else None
+
+            # Subset language/era supervision to the ICF-supervised rows by default.
+            if language_logits is not None and language_targets is not None and len(icf_idx) > 0:
+                language_logits = language_logits[icf_idx]
+                language_targets = language_targets[icf_idx]
+            else:
+                language_logits = None
+                language_targets = None
+
+            if era_logits is not None and era_targets is not None and len(icf_idx) > 0:
+                era_logits = era_logits[icf_idx]
+                era_targets = era_targets[icf_idx]
+            else:
+                era_logits = None
+                era_targets = None
+
+            # Temporal: only compute when both predictions + targets exist and mask selects rows.
+            historical_targets_full = (
+                batch.get("historical_targets") if isinstance(batch, dict) else None
+            )
+            historical_mask = batch.get("historical_mask") if isinstance(batch, dict) else None
+            historical_predictions = None
+            historical_targets = None
+            current_predictions = None
+            current_targets = None
+
+            if (
+                self.use_multi_task_model
+                and isinstance(model_outputs, dict)
+                and model_outputs.get("temporal") is not None
+                and isinstance(historical_targets_full, dict)
+                and historical_mask is not None
+            ):
+                historical_mask = historical_mask.to(torch.bool).view(-1)
+                temp_idx = torch.where(
+                    historical_mask & (icf_mask if icf_mask is not None else True)
+                )[0]
+                temporal_pred = model_outputs["temporal"]
+                decades = list(self.config.get("temporal_decades", (1800, 1900, 2000)))
+                if (
+                    len(temp_idx) > 0
+                    and temporal_pred.dim() == 2
+                    and temporal_pred.size(1) >= len(decades)
+                ):
+                    current_predictions = predictions[temp_idx]
+                    current_targets = icf_targets[temp_idx]
+                    historical_predictions = {
+                        int(dec): temporal_pred[temp_idx, j].unsqueeze(1)
+                        for j, dec in enumerate(decades)
+                    }
+                    historical_targets = {
+                        int(dec): historical_targets_full[int(dec)][temp_idx]
+                        for dec in decades
+                        if int(dec) in historical_targets_full
+                    }
+
+            # Call unified loss with all task data (if available).
             loss_result = self.criterion(
-                icf_predictions=predictions,
-                icf_targets=icf_targets,
-                icf_pairs=pairs if pairs is not None and len(pairs) > 0 else None,
-                language_logits=(
-                    model_outputs.get("language")
-                    if self.use_multi_task_model and isinstance(model_outputs, dict)
-                    else (batch.get("language_logits") if isinstance(batch, dict) else None)
-                ),
-                language_targets=batch.get("language_targets") if isinstance(batch, dict) else None,
-                era_logits=(
-                    model_outputs.get("era")
-                    if self.use_multi_task_model and isinstance(model_outputs, dict)
-                    else (batch.get("era_logits") if isinstance(batch, dict) else None)
-                ),
-                era_targets=batch.get("era_targets") if isinstance(batch, dict) else None,
-                current_predictions=predictions,
-                current_targets=icf_targets,
-                historical_predictions=(
-                    batch.get("historical_predictions") if isinstance(batch, dict) else None
-                ),
-                historical_targets=(
-                    batch.get("historical_targets") if isinstance(batch, dict) else None
-                ),
+                icf_predictions=icf_predictions,
+                icf_targets=icf_targets_sub,
+                icf_pairs=pairs,
+                language_logits=language_logits,
+                language_targets=language_targets,
+                era_logits=era_logits,
+                era_targets=era_targets,
+                hygiene_logits=hygiene_logits,
+                hygiene_targets=hygiene_targets,
+                current_predictions=current_predictions,
+                current_targets=current_targets,
+                historical_predictions=historical_predictions,
+                historical_targets=historical_targets,
                 word_icf_scores=batch.get("word_icf_scores") if isinstance(batch, dict) else None,
                 original_embedding=(
                     batch.get("original_embedding") if isinstance(batch, dict) else None
@@ -569,46 +648,114 @@ class FlexibleIDFLightningModule(LightningModule):
 
         if self.use_unified_loss:
             # Unified multi-task loss
-            n_pairs = min(len(icf_targets), 16)
-            pairs, pair_target_diffs = generate_ranking_pairs(
-                icf_targets.squeeze(1) if icf_targets.dim() > 1 else icf_targets,
-                n_pairs=n_pairs,
-                min_diff=0.05,
-                use_weighted_sampling=False,  # No weighted sampling in validation
-            )
+            icf_mask = batch.get("icf_mask") if isinstance(batch, dict) else None
+            if icf_mask is not None:
+                icf_mask = icf_mask.to(torch.bool).view(-1)
+                icf_idx = torch.where(icf_mask)[0]
+            else:
+                icf_idx = torch.arange(len(icf_targets), device=icf_targets.device)
 
-            if pairs is not None and len(pairs) > 0:
-                pairs = pairs.to(predictions.device)
-                pair_target_diffs = (
-                    pair_target_diffs.to(predictions.device)
-                    if pair_target_diffs is not None
-                    else None
+            icf_predictions = predictions[icf_idx] if len(icf_idx) > 0 else None
+            icf_targets_sub = icf_targets[icf_idx] if len(icf_idx) > 0 else None
+
+            pairs = None
+            if icf_targets_sub is not None and len(icf_idx) >= 2:
+                n_pairs = min(len(icf_targets_sub), 16)
+                pairs_rel, _pair_target_diffs = generate_ranking_pairs(
+                    icf_targets_sub.squeeze(1) if icf_targets_sub.dim() > 1 else icf_targets_sub,
+                    n_pairs=n_pairs,
+                    min_diff=0.05,
+                    use_weighted_sampling=False,
                 )
+                if pairs_rel is not None and len(pairs_rel) > 0:
+                    pairs = pairs_rel.to(predictions.device)
+
+            language_logits = (
+                model_outputs.get("language")
+                if self.use_multi_task_model and isinstance(model_outputs, dict)
+                else (batch.get("language_logits") if isinstance(batch, dict) else None)
+            )
+            language_targets = batch.get("language_targets") if isinstance(batch, dict) else None
+            era_logits = (
+                model_outputs.get("era")
+                if self.use_multi_task_model and isinstance(model_outputs, dict)
+                else (batch.get("era_logits") if isinstance(batch, dict) else None)
+            )
+            era_targets = batch.get("era_targets") if isinstance(batch, dict) else None
+            hygiene_logits = (
+                model_outputs.get("hygiene")
+                if self.use_multi_task_model and isinstance(model_outputs, dict)
+                else (batch.get("hygiene_logits") if isinstance(batch, dict) else None)
+            )
+            hygiene_targets = batch.get("hygiene_targets") if isinstance(batch, dict) else None
+
+            if language_logits is not None and language_targets is not None and len(icf_idx) > 0:
+                language_logits = language_logits[icf_idx]
+                language_targets = language_targets[icf_idx]
+            else:
+                language_logits = None
+                language_targets = None
+
+            if era_logits is not None and era_targets is not None and len(icf_idx) > 0:
+                era_logits = era_logits[icf_idx]
+                era_targets = era_targets[icf_idx]
+            else:
+                era_logits = None
+                era_targets = None
+
+            historical_targets_full = (
+                batch.get("historical_targets") if isinstance(batch, dict) else None
+            )
+            historical_mask = batch.get("historical_mask") if isinstance(batch, dict) else None
+            historical_predictions = None
+            historical_targets = None
+            current_predictions = None
+            current_targets = None
+
+            if (
+                self.use_multi_task_model
+                and isinstance(model_outputs, dict)
+                and model_outputs.get("temporal") is not None
+                and isinstance(historical_targets_full, dict)
+                and historical_mask is not None
+            ):
+                historical_mask = historical_mask.to(torch.bool).view(-1)
+                temp_idx = torch.where(
+                    historical_mask & (icf_mask if icf_mask is not None else True)
+                )[0]
+                temporal_pred = model_outputs["temporal"]
+                decades = list(self.config.get("temporal_decades", (1800, 1900, 2000)))
+                if (
+                    len(temp_idx) > 0
+                    and temporal_pred.dim() == 2
+                    and temporal_pred.size(1) >= len(decades)
+                ):
+                    current_predictions = predictions[temp_idx]
+                    current_targets = icf_targets[temp_idx]
+                    historical_predictions = {
+                        int(dec): temporal_pred[temp_idx, j].unsqueeze(1)
+                        for j, dec in enumerate(decades)
+                    }
+                    historical_targets = {
+                        int(dec): historical_targets_full[int(dec)][temp_idx]
+                        for dec in decades
+                        if int(dec) in historical_targets_full
+                    }
 
             loss_result = self.criterion(
-                icf_predictions=predictions,
-                icf_targets=icf_targets,
-                icf_pairs=pairs if pairs is not None and len(pairs) > 0 else None,
-                language_logits=(
-                    model_outputs.get("language")
-                    if self.use_multi_task_model and isinstance(model_outputs, dict)
-                    else (batch.get("language_logits") if isinstance(batch, dict) else None)
-                ),
-                language_targets=batch.get("language_targets") if isinstance(batch, dict) else None,
-                era_logits=(
-                    model_outputs.get("era")
-                    if self.use_multi_task_model and isinstance(model_outputs, dict)
-                    else (batch.get("era_logits") if isinstance(batch, dict) else None)
-                ),
-                era_targets=batch.get("era_targets") if isinstance(batch, dict) else None,
-                current_predictions=predictions,
-                current_targets=icf_targets,
-                historical_predictions=(
-                    batch.get("historical_predictions") if isinstance(batch, dict) else None
-                ),
-                historical_targets=(
-                    batch.get("historical_targets") if isinstance(batch, dict) else None
-                ),
+                icf_predictions=icf_predictions,
+                icf_targets=icf_targets_sub,
+                icf_pairs=pairs,
+                language_logits=language_logits,
+                language_targets=language_targets,
+                era_logits=era_logits,
+                era_targets=era_targets,
+                hygiene_logits=hygiene_logits,
+                hygiene_targets=hygiene_targets,
+                current_predictions=current_predictions,
+                current_targets=current_targets,
+                historical_predictions=historical_predictions,
+                historical_targets=historical_targets,
                 word_icf_scores=batch.get("word_icf_scores") if isinstance(batch, dict) else None,
                 original_embedding=(
                     batch.get("original_embedding") if isinstance(batch, dict) else None

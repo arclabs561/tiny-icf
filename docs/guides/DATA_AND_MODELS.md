@@ -11,7 +11,7 @@ This repository does not include training data or model files to keep the repo s
 
 ### Option 2: Python Script
 ```bash
-python scripts/download_datasets.py
+uv run python scripts/download_best_data.py
 ```
 
 ### Option 3: Manual Download
@@ -19,6 +19,9 @@ Place your training data in the `data/` directory:
 - `data/word_frequency.csv` - Main training data (word, frequency columns)
 - `data/word_frequency_modern.csv` - With modern words added
 - Other data files as needed
+
+For multilingual training (language-prefixed keys), this repo can also use:
+- `data/word_frequency_multilingual.csv` - Keys like `en:word`, `es:palabra`, etc
 
 ## Getting Models
 

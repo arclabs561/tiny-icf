@@ -45,12 +45,11 @@ echo ""
 echo "Step 3: Performance Benchmark"
 echo "-" | head -c 80; echo
 python -c "
-from tiny_icf.model import UniversalICF
+from tiny_icf.checkpoint import load_model
 import torch
 import time
 
-model = UniversalICF()
-model.load_state_dict(torch.load('$MODEL', map_location='cpu'))
+model, _checkpoint = load_model('$MODEL', device=torch.device('cpu'))
 model.eval()
 
 # Test inference speed

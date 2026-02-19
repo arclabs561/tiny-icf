@@ -12,23 +12,14 @@ mkdir -p "$DATA_DIR"
 echo "📥 Downloading training data for tiny-icf..."
 echo ""
 
-# Main word frequency data
+# Build best available frequency lists (wordfreq-based).
 if [ ! -f "$DATA_DIR/word_frequency.csv" ]; then
-    echo "Downloading word frequency data..."
-    # Add your download URL here
-    # curl -L -o "$DATA_DIR/word_frequency.csv" "YOUR_URL"
-    echo "⚠️  Please download word_frequency.csv and place it in data/"
-    echo "   Or use: python scripts/download_datasets.py"
+    echo "Building best frequency lists via wordfreq..."
+    cd "$PROJECT_ROOT"
+    uv run python scripts/download_best_data.py
 else
     echo "✓ word_frequency.csv already exists"
-fi
-
-# Run Python download script if available
-if [ -f "$PROJECT_ROOT/scripts/download_datasets.py" ]; then
-    echo ""
-    echo "Running download_datasets.py..."
-    cd "$PROJECT_ROOT"
-    python scripts/download_datasets.py || echo "⚠️  Download script failed, check manually"
+    echo "  (If you want to rebuild from wordfreq, run: uv run python scripts/download_best_data.py)"
 fi
 
 echo ""

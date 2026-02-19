@@ -7,16 +7,23 @@ from pathlib import Path
 
 import torch
 
+from tiny_icf.checkpoint import load_model
 from tiny_icf.nano_model import NanoICF
 
 
 def export_nano_weights(model_path: str, output_json: str, output_bin: str | None = None):
     """Export Nano-CNN weights to JSON and optionally binary format."""
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    # Export should be deterministic and not depend on CUDA availability.
+    device = torch.device("cpu")
 
     # Load model
-    model = NanoICF().to(device)
-    model.load_state_dict(torch.load(model_path, map_location=device))
+    model, checkpoint = load_model(model_path, device=device)
+    if not isinstance(model, NanoICF):
+        model_type = checkpoint.get("model_type", type(model).__name__)
+        raise ValueError(
+            f"export_nano_weights expects a NanoICF checkpoint, got {model_type!r}. "
+            "Use `tiny_icf.export_weights` for UniversalICF exports."
+        )
     model.eval()
 
     state = model.state_dict()
