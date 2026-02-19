@@ -51,7 +51,7 @@ def test_jabberwocky_baseline():
 
     # Baseline: Untrained model should at least not crash
     assert results["pass_rate"] >= 0.0
-    assert results["total_count"] == 5
+    assert results["total_count"] == 13, "Default Jabberwocky suite is 13 cases"
 
 
 @pytest.mark.regression

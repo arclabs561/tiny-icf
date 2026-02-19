@@ -39,17 +39,8 @@ def test_jabberwocky_protocol(model_path: str, device: torch.device):
     model, _checkpoint = load_model(model_path, device=device)
     model.eval()
 
-    # Test cases: (word, min_icf, max_icf, description)
-    test_cases = [
-        ("the", 0.0, 0.1, "Common stopword"),
-        ("xylophone", 0.7, 0.95, "Rare but valid word"),
-        ("flimjam", 0.6, 0.85, "Rare, looks English"),
-        ("qzxbjk", 0.95, 1.0, "Impossible structure"),
-        ("unfriendliness", 0.4, 0.7, "Composed of common parts"),
-    ]
-
-    # Use evaluation function
-    results = evaluate_jabberwocky(model, device, test_cases)
+    # Use evaluation function with default expanded test suite
+    results = evaluate_jabberwocky(model, device)
 
     # Report results
     print(
@@ -57,11 +48,10 @@ def test_jabberwocky_protocol(model_path: str, device: torch.device):
     )
     for r in results["results"]:
         status = "✓" if r["passed"] else "✗"
-        print(f"  {status} {r['word']:20} -> ICF: {r['predicted']:.4f} ({r['description']})")
+        print(f"  {status} {r['word']:22} -> ICF: {r['predicted']:.4f} ({r['description']})")
 
-    # For untrained model, we expect failures (this is a sanity check)
-    # After training, we expect 5/5 to pass
-    assert results["total_count"] == 5, "Should have 5 test cases"
+    # For untrained model we only verify structural invariants.
+    assert results["total_count"] == 13, "Default suite should have 13 test cases"
     assert 0.0 <= results["pass_rate"] <= 1.0, "Pass rate should be in [0, 1]"
 
 

@@ -1103,9 +1103,23 @@ class FlexibleIDFLightningModule(LightningModule):
                     json_path = os.path.join(
                         self.trainer.log_dir, f"diagnostic_data_epoch_{current_epoch}.json"
                     )
+                    def _to_py(v):
+                        """Recursively convert numpy/torch scalars to plain Python types."""
+                        if isinstance(v, dict):
+                            return {k: _to_py(vv) for k, vv in v.items()}
+                        if isinstance(v, (list, tuple)):
+                            return [_to_py(x) for x in v]
+                        if hasattr(v, "item"):
+                            return v.item()
+                        if isinstance(v, float):
+                            return float(v)
+                        if isinstance(v, int):
+                            return int(v)
+                        return v
+
                     # Convert to JSON-serializable format
                     diagnostic_json = {
-                        "distances": dist_metrics,
+                        "distances": _to_py(dist_metrics),
                         "interesting_cases": {
                             "close_calls": [
                                 {"word": w, "pred": float(p), "target": float(t), "error": float(e)}

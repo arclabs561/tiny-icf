@@ -113,9 +113,12 @@ def main():
     
     print(f"Pass Rate: {jabberwocky_results['pass_rate']:.1%} ({jabberwocky_results['passed_count']}/{jabberwocky_results['total_count']})")
     print()
+    print(f"  {'word':22s}  {'pred':>6}  {'expected':>14}  ok?  description")
+    print(f"  {'-'*22}  {'-'*6}  {'-'*14}  ---  -----------")
     for r in jabberwocky_results['results']:
         status = "✓" if r['passed'] else "✗"
-        print(f"  {status} {r['word']:20} -> {r['predicted']:.4f} (expected: {r['min_icf']:.2f}-{r['max_icf']:.2f}) - {r['description']}")
+        exp = f"[{r['min_icf']:.2f}, {r['max_icf']:.2f}]"
+        print(f"  {status} {r['word']:22s}  {r['predicted']:6.4f}  {exp:>14}       {r['description']}")
     print()
     
     if args.jabberwocky_only:

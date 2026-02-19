@@ -296,11 +296,24 @@ def evaluate_jabberwocky(
     """
     if test_cases is None:
         test_cases = [
-            ("the", 0.0, 0.1, "Common stopword"),
-            ("xylophone", 0.7, 0.95, "Rare but valid word"),
-            ("flimjam", 0.6, 0.85, "Rare, looks English"),
-            ("qzxbjk", 0.95, 1.0, "Impossible structure"),
-            ("unfriendliness", 0.4, 0.7, "Composed of common parts"),
+            # ── very common ──────────────────────────────────────────────────
+            ("the",             0.00, 0.15, "Most-common English word"),
+            ("and",             0.00, 0.20, "2nd-most-common English word"),
+            ("is",              0.00, 0.20, "Very common copula"),
+            # ── moderately common ────────────────────────────────────────────
+            ("table",           0.30, 0.65, "Common concrete noun"),
+            ("running",         0.25, 0.60, "Common verb form"),
+            ("beautiful",       0.40, 0.70, "Moderate-frequency adjective"),
+            # ── rare real words ──────────────────────────────────────────────
+            ("xylophone",       0.65, 0.92, "Rare but valid word"),
+            ("soliloquy",       0.65, 0.92, "Rare literary word"),
+            # ── plausible OOV (composed / looks English) ────────────────────
+            ("flimjam",         0.55, 0.88, "Nonsense but looks English"),
+            ("unfriendliness",  0.35, 0.72, "Long composed word"),
+            ("preunification",  0.55, 0.90, "Plausible derived form"),
+            # ── structural gibberish ─────────────────────────────────────────
+            ("qzxbjk",          0.90, 1.00, "Impossible consonant cluster"),
+            ("zzzzz",           0.90, 1.00, "Repeated impossible letter"),
         ]
 
     model.eval()
