@@ -293,6 +293,18 @@ def main() -> int:
     if args.export is not None:
         export_path = args.export
         export_path.parent.mkdir(parents=True, exist_ok=True)
+        # Prefer best checkpoint over final state (avoids exporting a regressed model)
+        best_path = getattr(ckpt_cb, "best_model_path", None) if ckpt_cb else None
+        if best_path and Path(best_path).exists():
+            lightning_ckpt = torch.load(best_path, map_location="cpu", weights_only=False)
+            sd = lightning_ckpt.get("state_dict", {})
+            model_sd = {
+                k[6:]: v
+                for k, v in sd.items()
+                if k.startswith("model.") and not k.startswith("model.criterion")
+            }
+            module.model.load_state_dict(model_sd, strict=False)
+            print(f"  Exporting best checkpoint: {best_path}")
         export_ckpt = {
             "model_type": "MultiTaskICF",
             "model_kwargs": {
