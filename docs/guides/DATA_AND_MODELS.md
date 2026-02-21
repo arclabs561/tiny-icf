@@ -55,6 +55,15 @@ tiny-icf/
 └── scripts/           # Scripts including download helpers (committed)
 ```
 
+## Model selection (pre-trained)
+
+| Model | Jabberwocky | MAE | Spearman | Use when |
+|-------|-------------|-----|----------|----------|
+| `multitask_all_fronts_v3.pt` | 46% | 0.26 | 0.14 | OOV calibration, pseudo-words |
+| `multitask_all_fronts_v3b.pt` | 31% | 0.09 | 0.18 | Dataset fit, ranking quality |
+
+Download from S3: `aws s3 cp s3://arclabs-backups/tiny-icf/models/<name>.pt models/`
+
 ## Model Storage: Repo vs Local vs S3
 
 | Location | Status |
