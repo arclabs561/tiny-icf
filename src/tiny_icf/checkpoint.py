@@ -238,6 +238,93 @@ def load_checkpoint(
     return checkpoint, state_dict, model_kwargs
 
 
+def _infer_multitask_kwargs(model_sd: "dict[str, Any]") -> "dict[str, Any]":
+    """
+    Infer MultiTaskICF constructor kwargs from a (possibly Lightning-stripped) state_dict.
+    Handles cases where model_kwargs metadata is missing from the checkpoint.
+    """
+    kw: "dict[str, Any]" = {}
+    # conv_channels: first dim of conv3.0.weight  [out, in, k]
+    for prefix in ("", "base."):
+        w = model_sd.get(f"{prefix}conv3.0.weight")
+        if w is not None and hasattr(w, "shape") and len(getattr(w, "shape", ())) >= 1:
+            kw.setdefault("base_model_kwargs", {})["conv_channels"] = int(w.shape[0])
+            break
+    # hidden_dim: first dim of head.0.weight  [hidden, conv*9]
+    for prefix in ("", "base."):
+        w = model_sd.get(f"{prefix}head.0.weight")
+        if w is not None and hasattr(w, "shape") and len(getattr(w, "shape", ())) >= 1:
+            kw.setdefault("base_model_kwargs", {})["hidden_dim"] = int(w.shape[0])
+            break
+    # num_languages
+    lw = model_sd.get("language_head.3.weight")
+    if lw is not None and hasattr(lw, "shape"):
+        kw["num_languages"] = int(lw.shape[0])
+    # temporal_decades
+    tw = model_sd.get("temporal_head.3.weight")
+    if tw is not None and hasattr(tw, "shape"):
+        n = int(tw.shape[0])
+        kw["temporal_decades"] = list(range(1800, 1800 + n * 10, 10))
+    else:
+        kw["temporal_decades"] = []
+    # output_tasks
+    tasks = ["icf"]
+    if "language_head.0.weight" in model_sd:
+        tasks.append("language")
+    if "era_head.0.weight" in model_sd:
+        tasks.append("era")
+    if "temporal_head.0.weight" in model_sd and kw.get("temporal_decades"):
+        tasks.append("temporal")
+    if "hygiene_head.0.weight" in model_sd:
+        tasks.append("hygiene")
+    kw["output_tasks"] = tasks
+    return kw
+
+
+def load_lightning_checkpoint(
+    path: "str | Path",
+    *,
+    device: "torch.device",
+) -> "tuple[torch.nn.Module, dict[str, Any]]":
+    """
+    Load a Lightning .ckpt file that contains a MultiTaskICF or UniversalICF model.
+    Infers architecture dimensions from the state_dict when model_kwargs is absent.
+    """
+    import torch as _torch
+
+    raw = _torch.load(str(path), map_location=device, weights_only=False)
+    sd_full = raw.get("state_dict", {})
+
+    # Extract model sub-dict (strip "model." prefix added by Lightning)
+    model_sd = {
+        k[6:]: v
+        for k, v in sd_full.items()
+        if k.startswith("model.") and not k.startswith("model.criterion")
+    }
+    if not model_sd:
+        # No "model." prefix — assume it's a plain state_dict
+        model_sd = sd_full
+
+    # Check if it's MultiTaskICF (has language_head or era_head)
+    is_multitask = any(
+        k.startswith(("language_head.", "era_head.", "temporal_head.", "hygiene_head."))
+        for k in model_sd
+    )
+
+    if is_multitask:
+        from tiny_icf.model_multi_task import MultiTaskICF
+
+        kw = _infer_multitask_kwargs(model_sd)
+        model = MultiTaskICF(**kw).to(device)
+    else:
+        from tiny_icf.model import UniversalICF
+
+        model = UniversalICF().to(device)
+
+    model.load_state_dict(model_sd, strict=False)
+    return model, raw
+
+
 def load_model(
     path: str | Path,
     *,
@@ -246,9 +333,19 @@ def load_model(
     """
     Load a model for inference/evaluation from either format.
 
+    Supports:
+    - .pt checkpoint dicts (exported by train_all_fronts.py)
+    - Lightning .ckpt files (direct trainer checkpoints)
+
     Returns:
         (model, checkpoint_dict)
     """
+    path = Path(path)
+
+    # Lightning .ckpt files have a "state_dict" key
+    if path.suffix == ".ckpt":
+        return load_lightning_checkpoint(path, device=device)
+
     checkpoint, state_dict, model_kwargs = load_checkpoint(path, device=device)
     model_type = checkpoint.get("model_type", "UniversalICF")
 
@@ -264,6 +361,10 @@ def load_model(
         from tiny_icf.model_multi_task import MultiTaskICF
 
         model = MultiTaskICF(**model_kwargs).to(device)
+        # Use strict=False so older checkpoints missing newly-added modules
+        # (e.g. lang_icf_cond) still load without error.
+        model.load_state_dict(state_dict, strict=False)
+        return model, checkpoint
     else:
         from tiny_icf.model import UniversalICF
 
