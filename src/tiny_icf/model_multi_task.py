@@ -114,6 +114,26 @@ class MultiTaskICF(nn.Module):
                 nn.Linear(feature_dim, num_hygiene),
             )
 
+        # Language-conditioned ICF refinement: a small MLP that applies a
+        # residual correction to the base ICF prediction conditioned on the
+        # predicted language distribution.  Only built when both "icf" and
+        # "language" tasks are enabled.  At inference the language softmax is
+        # detached so gradient flows only through the base and language heads;
+        # this keeps the heads independent while still sharing the signal.
+        self._use_lang_cond = (
+            "icf" in output_tasks and "language" in output_tasks
+        )
+        if self._use_lang_cond:
+            self.lang_icf_cond = nn.Sequential(
+                nn.Linear(feature_dim + num_languages, max(feature_dim // 2, 8)),
+                nn.ReLU(),
+                nn.Linear(max(feature_dim // 2, 8), 1),
+                nn.Tanh(),  # Tanh keeps correction in (-1, +1)
+            )
+            # Scale correction output so it starts small (avoids disrupting warm-start)
+            nn.init.zeros_(self.lang_icf_cond[-2].weight)
+            nn.init.zeros_(self.lang_icf_cond[-2].bias)
+
     def forward(
         self,
         x: torch.Tensor,
@@ -154,6 +174,17 @@ class MultiTaskICF(nn.Module):
         if "language" in self.output_tasks:
             lang_logits = self.language_head(feats)
             outputs["language"] = lang_logits
+
+            # Language-conditioned ICF refinement: apply a small residual
+            # correction to the base ICF scaled by 0.3 so it can nudge within
+            # ±0.3 without overriding the base prediction.  The language logits
+            # are detached so the correction doesn't feed gradients back into
+            # the language head — the two heads remain independently trained.
+            if self._use_lang_cond and hasattr(self, "lang_icf_cond"):
+                lang_probs = torch.softmax(lang_logits.detach(), dim=-1)
+                cond_in = torch.cat([feats.detach(), lang_probs], dim=-1)
+                correction = self.lang_icf_cond(cond_in) * 0.3  # scale to ±0.3
+                outputs["icf"] = torch.clamp(icf_pred + correction, 0.0, 1.0)
 
         # Era prediction
         if "era" in self.output_tasks:
