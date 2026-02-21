@@ -55,6 +55,16 @@ tiny-icf/
 └── scripts/           # Scripts including download helpers (committed)
 ```
 
+## Model Storage: Repo vs Local vs S3
+
+| Location | Status |
+|----------|--------|
+| **Repo** | No. `models/`, `*.pt`, `*.ckpt` are gitignored. |
+| **Local** | Yes. Training writes to `models/` (or `--output-dir`). |
+| **S3** | Optional. Use `scripts/upload_model_to_s3.sh` after training. |
+
+To publish a model for others: train locally, then upload to your S3 bucket (or GitHub Releases). The upload script requires `aws` CLI and `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` (or equivalent).
+
 ## Why Excluded?
 
 - **Data files**: Large, change frequently, user-specific

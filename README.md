@@ -140,6 +140,7 @@ uv run python scripts/train_all_fronts.py \
 ## Data and models
 
 This repo intentionally does **not** include training data or trained model files (they’re large and user-specific).
+Models are saved locally in `models/` (gitignored). To publish: `./scripts/upload_model_to_s3.sh models/multitask.pt s3://your-bucket/tiny-icf/`.
 See `docs/guides/DATA_AND_MODELS.md` for download/training workflows.
 
 Training data format: CSV with `word,count` (header optional). See `tiny_icf.data.load_frequency_list`.
