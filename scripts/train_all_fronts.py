@@ -261,18 +261,25 @@ def main() -> int:
     module = FlexibleIDFLightningModule(config=config, learning_rate=args.lr, weight_decay=args.weight_decay)
 
     # Optional init-from: load a UniversalICF checkpoint into the base model.
-    # Uses strict=False so a checkpoint trained with different conv_channels/hidden_dim
-    # is loaded partially (matching layers transferred, new layers stay random-init).
+    # Uses shape-filtered loading so a checkpoint with different conv_channels/hidden_dim
+    # transfers only the layers whose shapes match (embedding weights always transfer).
     if args.init_from is not None:
         base, _ckpt = load_model(args.init_from, device=torch.device("cpu"))
         if hasattr(module.model, "base"):
-            result = module.model.base.load_state_dict(base.state_dict(), strict=False)
-            if result.missing_keys or result.unexpected_keys:
-                print(
-                    f"  init-from partial load: missing={len(result.missing_keys)} "
-                    f"unexpected={len(result.unexpected_keys)} keys"
-                    " (expected when conv_channels/hidden_dim differ)"
-                )
+            src = base.state_dict()
+            tgt = module.model.base.state_dict()
+            # Filter: keep only keys that exist in target AND have matching shape.
+            compatible = {
+                k: v
+                for k, v in src.items()
+                if k in tgt and tgt[k].shape == v.shape
+            }
+            skipped = [k for k in src if k not in compatible]
+            result = module.model.base.load_state_dict(compatible, strict=False)
+            print(
+                f"  init-from load: {len(compatible)} compatible keys transferred, "
+                f"{len(skipped)} skipped (shape mismatch)"
+            )
 
     ckpt_cb = ModelCheckpoint(
         dirpath=args.output_dir,
