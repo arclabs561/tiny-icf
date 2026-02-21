@@ -100,6 +100,12 @@ def main() -> int:
     p.add_argument("--devices", type=int, default=1)
     p.add_argument("--precision", type=str, default="16-mixed")
     p.add_argument(
+        "--early-stopping-patience",
+        type=int,
+        default=20,
+        help="EarlyStopping patience (epochs without val_loss improvement before stopping).",
+    )
+    p.add_argument(
         "--conv-channels",
         type=int,
         default=18,
@@ -252,7 +258,7 @@ def main() -> int:
         save_last=True,
     )
     lr_cb = LearningRateMonitor(logging_interval="epoch")
-    early_cb = EarlyStopping(monitor="val_loss", mode="min", patience=10)
+    early_cb = EarlyStopping(monitor="val_loss", mode="min", patience=int(args.early_stopping_patience))
 
     logger = CSVLogger(save_dir=str(args.output_dir / "logs"))
 

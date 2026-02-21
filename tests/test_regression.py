@@ -49,7 +49,8 @@ def test_jabberwocky_baseline():
 
     results = evaluate_jabberwocky(model, device)
 
-    # Baseline: Untrained model should at least not crash
+    # Baseline: Untrained model should at least not crash.
+    # Default suite has 13 cases with bounds calibrated to multilingual log-ICF.
     assert results["pass_rate"] >= 0.0
     assert results["total_count"] == 13, "Default Jabberwocky suite is 13 cases"
 

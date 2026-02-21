@@ -295,18 +295,22 @@ def evaluate_jabberwocky(
         Dictionary with results and pass rate
     """
     if test_cases is None:
+        # Bounds calibrated to per-language log-ICF targets from word_frequency_multilingual.csv:
+        #   en:the=0.140  en:and=0.175  en:is=0.213
+        #   en:table=0.438  en:running=0.418  en:beautiful=0.419
+        #   en:xylophone=0.736  en:soliloquy=0.727
         test_cases = [
             # ── very common ──────────────────────────────────────────────────
-            ("the",             0.00, 0.15, "Most-common English word"),
-            ("and",             0.00, 0.20, "2nd-most-common English word"),
-            ("is",              0.00, 0.20, "Very common copula"),
+            ("the",             0.00, 0.22, "Most-common English word (ICF≈0.14)"),
+            ("and",             0.00, 0.25, "2nd-most-common English word (ICF≈0.18)"),
+            ("is",              0.05, 0.30, "Very common copula (ICF≈0.21)"),
             # ── moderately common ────────────────────────────────────────────
-            ("table",           0.30, 0.65, "Common concrete noun"),
-            ("running",         0.25, 0.60, "Common verb form"),
-            ("beautiful",       0.40, 0.70, "Moderate-frequency adjective"),
+            ("table",           0.30, 0.60, "Common concrete noun (ICF≈0.44)"),
+            ("running",         0.28, 0.58, "Common verb form (ICF≈0.42)"),
+            ("beautiful",       0.30, 0.58, "Moderate-frequency adjective (ICF≈0.42)"),
             # ── rare real words ──────────────────────────────────────────────
-            ("xylophone",       0.65, 0.92, "Rare but valid word"),
-            ("soliloquy",       0.65, 0.92, "Rare literary word"),
+            ("xylophone",       0.62, 0.90, "Rare but valid word (ICF≈0.74)"),
+            ("soliloquy",       0.60, 0.90, "Rare literary word (ICF≈0.73)"),
             # ── plausible OOV (composed / looks English) ────────────────────
             ("flimjam",         0.55, 0.88, "Nonsense but looks English"),
             ("unfriendliness",  0.35, 0.72, "Long composed word"),
