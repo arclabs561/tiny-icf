@@ -119,6 +119,22 @@ uv run tiny-icf-predict \
   --model models/multitask_all_fronts.pt \
   --words "http://example.com thou thee w00t qzxbjk" \
   --detailed
+
+# Monitor training progress (reads latest metrics.csv)
+uv run python scripts/watch_training.py
+
+# Evaluate Jabberwocky + dataset Spearman
+uv run python scripts/evaluate_model.py --model models/multitask_all_fronts.pt --jabberwocky-only
+uv run python scripts/evaluate_model.py --model models/multitask_all_fronts.pt --data data/word_frequency.csv
+
+# English-only (no lang prefix): better "the"/"and" calibration, no multilingual ambiguity
+uv run python scripts/train_all_fronts.py \
+  --data data/word_frequency.csv \
+  --output-dir models/all_fronts_en \
+  --export models/multitask_en.pt \
+  --no-language --no-era \
+  --hygiene --hygiene-noise-ratio 0.25 \
+  --epochs 30 --train-max-samples 200000
 ```
 
 ## Data and models
