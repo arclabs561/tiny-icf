@@ -223,6 +223,23 @@ class FlexibleIDFLightningModule(LightningModule):
         self.use_weighted_sampling = config.get("use_weighted_sampling", True)
         self.clip_grad_norm = config.get("clip_grad_norm", 1.0)
 
+        # Anchor-word calibration: a fixed set of (word, target_icf) pairs whose
+        # Huber loss is added to every training step.  This guarantees that
+        # critical English common words (the, and, is…) always get gradient
+        # signal even when they are absent from the random mini-batch.
+        self._anchor_bytes: torch.Tensor | None = None
+        self._anchor_targets: torch.Tensor | None = None
+        self.anchor_loss_weight = float(config.get("anchor_loss_weight", 0.0))
+        _anchor_cfg: list[tuple[str, float]] = list(config.get("anchor_words", []))
+        if _anchor_cfg and self.anchor_loss_weight > 0:
+            from tiny_icf.predict import word_to_bytes as _w2b
+
+            byte_list = [_w2b(w, max_length=20) for w, _ in _anchor_cfg]
+            self._anchor_bytes = torch.cat(byte_list, dim=0)  # [N, 20]
+            self._anchor_targets = torch.tensor(
+                [[icf] for _, icf in _anchor_cfg], dtype=torch.float32
+            )  # [N, 1]
+
         # Distillation support (optional)
         self.use_distillation = config.get("use_distillation", False) and HAS_DISTILLATION
         self.teacher_model = None
@@ -562,6 +579,22 @@ class FlexibleIDFLightningModule(LightningModule):
                     pairs=pairs if pairs is not None and len(pairs) > 0 else None,
                     pair_target_diffs=pair_target_diffs,
                 )
+
+        # Anchor-word calibration loss: Huber loss on fixed (word, target) pairs.
+        # Adds direct gradient signal for critical English common words regardless
+        # of whether they appear in the current random mini-batch.
+        if self._anchor_bytes is not None and self.anchor_loss_weight > 0:
+            anc_bytes = self._anchor_bytes.to(byte_tensors.device)
+            anc_targets = self._anchor_targets.to(icf_targets.device)
+            if self.use_multi_task_model:
+                anc_out = self.model(anc_bytes, return_all=True)
+                anc_preds = anc_out.get("icf", self.model(anc_bytes))
+            else:
+                anc_preds = self.model(anc_bytes)
+            import torch.nn.functional as _F  # already imported at top but guard
+            anc_loss = _F.huber_loss(anc_preds, anc_targets, delta=0.1)
+            loss = loss + self.anchor_loss_weight * anc_loss
+            self.log("train_anchor_loss", anc_loss, on_step=True, on_epoch=True)
 
         self.log("train_loss", loss, on_step=True, on_epoch=True, prog_bar=True)
 

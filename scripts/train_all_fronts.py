@@ -152,6 +152,15 @@ def main() -> int:
     p.add_argument("--hygiene-weight", type=float, default=0.2)
     p.add_argument("--use-amoo", action="store_true", help="Use adaptive weighting (AMOO-style)")
     p.add_argument(
+        "--anchor-loss-weight",
+        type=float,
+        default=0.5,
+        help=(
+            "Weight for anchor-word calibration loss (Huber on fixed English common words). "
+            "Set to 0.0 to disable."
+        ),
+    )
+    p.add_argument(
         "--spearman-weight",
         type=float,
         default=2.0,
@@ -216,6 +225,22 @@ def main() -> int:
         "era_weight": float(args.era_weight),
         "temporal_weight": float(args.temporal_weight),
         "hygiene_weight": float(args.hygiene_weight),
+        # Anchor-word calibration (per-language log-ICF targets from en multilingual corpus)
+        "anchor_loss_weight": float(args.anchor_loss_weight),
+        "anchor_words": [
+            # (word_bytes_to_feed,  per_lang_log_icf_target)
+            # Values from compute_icf_per_language on word_frequency_multilingual.csv
+            ("the",             0.1398),
+            ("and",             0.1754),
+            ("is",              0.2132),
+            ("of",              0.1535),
+            ("to",              0.1487),
+            ("in",              0.1575),
+            ("a",               0.1198),
+            ("it",              0.2205),
+            ("that",            0.2059),
+            ("was",             0.2440),
+        ],
         # ICF ranking / Spearman regularizer
         "spearman_weight": float(args.spearman_weight),
         "n_pairs": 16,
