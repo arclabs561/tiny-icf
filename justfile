@@ -38,6 +38,15 @@ fmt:
 ci: lint test
     @echo "✓ lint + tests passed"
 
+# Check v3b/v4 training progress (watch metrics)
+check-training:
+    #!/usr/bin/env bash
+    echo "=== v3b ==="
+    uv run python scripts/watch_training.py models/all_fronts_v3b/logs/lightning_logs/version_0/metrics.csv
+    echo ""
+    echo "=== v4 ==="
+    uv run python scripts/watch_training.py models/all_fronts_v4/logs/lightning_logs/version_0/metrics.csv
+
 # OOV calibration eval: composed vs gibberish (saturation + AUROC)
 oov N="2000" MODEL="models/universal_50k_20ep.pt" DATA="data/word_frequency.csv" FIX_CENTER="1.0" FIX_SCALE="0.25" FIX_CONF_WEIGHT="0.0" *args:
     #!/usr/bin/env bash

@@ -65,7 +65,7 @@ tiny-icf/
 
 Download from S3: `aws s3 cp s3://arclabs-backups/tiny-icf/models/<name>.pt models/`
 
-Sync to S3 (as needed): `aws s3 sync models/ s3://arclabs-backups/tiny-icf/models/ --exclude "*" --include "multitask_all_fronts*.pt" --include "v3_base*.pt"`
+Sync to S3 (as needed): `aws s3 sync models/ s3://arclabs-backups/tiny-icf/models/ --exclude "*" --include "multitask_all_fronts*.pt" --include "v3_base*.pt"`. When a run finishes, the train script exports from best checkpoint; then run this sync.
 
 ## Model Storage: Repo vs Local vs S3
 
