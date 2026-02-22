@@ -120,21 +120,12 @@ uv run tiny-icf-predict \
   --words "http://example.com thou thee w00t qzxbjk" \
   --detailed
 
-# Monitor training progress (reads latest metrics.csv)
-uv run python scripts/watch_training.py
-
-# Check training (v3b / v4): one command or per-run
+# Monitor: just check-training (v3b/v4) or uv run python scripts/watch_training.py [metrics.csv]
 just check-training
-# Or watch + eval manually:
-uv run python scripts/watch_training.py models/all_fronts_v3b/logs/lightning_logs/version_0/metrics.csv
-uv run python scripts/watch_training.py models/all_fronts_v4/logs/lightning_logs/version_0/metrics.csv
-uv run python scripts/evaluate_model.py --model models/multitask_all_fronts_v3b.pt --data data/word_frequency.csv
 
-# Evaluate Jabberwocky + dataset Spearman
-uv run python scripts/evaluate_model.py --model models/multitask_all_fronts.pt --jabberwocky-only
-uv run python scripts/evaluate_model.py --model models/multitask_all_fronts.pt --data data/word_frequency.csv
+# Evaluate (Jabberwocky + MAE/Spearman): see "Evaluate" section below.
 
-# English-only (no lang prefix): better "the"/"and" calibration, no multilingual ambiguity
+# English-only (no lang prefix): better "the"/"and" calibration
 uv run python scripts/train_all_fronts.py \
   --data data/word_frequency.csv \
   --output-dir models/all_fronts_en \
@@ -146,25 +137,28 @@ uv run python scripts/train_all_fronts.py \
 
 ## Data and models
 
-This repo intentionally does **not** include training data or trained model files (they’re large and user-specific).
-Models are saved locally in `models/` (gitignored). To publish: `./scripts/upload_model_to_s3.sh models/multitask.pt s3://your-bucket/tiny-icf/`.
-See `docs/guides/DATA_AND_MODELS.md` for download/training workflows.
+No training data or model files are committed (large, user-specific). Train locally; artifacts go in `models/` (gitignored).
 
-Training data format: CSV with `word,count` (header optional). See `tiny_icf.data.load_frequency_list`.
+- **Pre-trained:** Model selection table and S3 download: `docs/guides/DATA_AND_MODELS.md`.
+- **Publish:** `./scripts/upload_model_to_s3.sh models/<name>.pt s3://your-bucket/tiny-icf/`.
+- **Data format:** CSV with `word,count` (optional header). See `tiny_icf.data.load_frequency_list`.
 
-## Evaluate (including Jabberwocky Protocol)
+## Evaluate (Jabberwocky + MAE/Spearman)
 
 ```bash
-uv run scripts/evaluate_model.py --model models/toy.pt --data data/toy_word_frequency.csv
-uv run scripts/evaluate_model.py --model models/toy.pt --jabberwocky-only
+# Full: Jabberwocky protocol + dataset metrics
+uv run python scripts/evaluate_model.py --model models/<name>.pt --data data/word_frequency.csv
+
+# Jabberwocky only (13 probe words)
+uv run python scripts/evaluate_model.py --model models/<name>.pt --jabberwocky-only
 ```
+Use `models/toy.pt` with `data/toy_word_frequency.csv` for the smoke-test model; use `multitask_all_fronts_v3b.pt` (or v3/v4) with `data/word_frequency.csv` for pre-trained.
 
 ## Development
 
 ```bash
-uv run pytest -q
-uv run ruff check .
-uv run black --check src tests
+just ci   # lint (ruff + black) + pytest
+# Or: uv run ruff check . && uv run black --check . && uv run pytest -q
 ```
 
 ## Docs
