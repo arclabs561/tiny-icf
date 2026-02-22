@@ -61,6 +61,7 @@ tiny-icf/
 |-------|-------------|-----|----------|----------|
 | `multitask_all_fronts_v3.pt` | 46% | 0.26 | 0.14 | OOV calibration, pseudo-words |
 | `multitask_all_fronts_v3b.pt` | 31% | 0.09 | 0.18 | Dataset fit, ranking quality |
+| `multitask_all_fronts_v4.pt` | 31% | 0.28 | 0.07 | Better "the"/common-word calibration (124K params) |
 
 Download from S3: `aws s3 cp s3://arclabs-backups/tiny-icf/models/<name>.pt models/`
 
