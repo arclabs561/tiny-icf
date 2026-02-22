@@ -123,6 +123,11 @@ uv run tiny-icf-predict \
 # Monitor training progress (reads latest metrics.csv)
 uv run python scripts/watch_training.py
 
+# Check training (v3b / v4 or any run): watch then eval
+uv run python scripts/watch_training.py models/all_fronts_v3b/logs/lightning_logs/version_0/metrics.csv
+uv run python scripts/watch_training.py models/all_fronts_v4/logs/lightning_logs/version_0/metrics.csv
+uv run python scripts/evaluate_model.py --model models/multitask_all_fronts_v3b.pt --data data/word_frequency.csv
+
 # Evaluate Jabberwocky + dataset Spearman
 uv run python scripts/evaluate_model.py --model models/multitask_all_fronts.pt --jabberwocky-only
 uv run python scripts/evaluate_model.py --model models/multitask_all_fronts.pt --data data/word_frequency.csv
