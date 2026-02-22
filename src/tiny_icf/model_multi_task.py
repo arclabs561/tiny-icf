@@ -120,9 +120,7 @@ class MultiTaskICF(nn.Module):
         # "language" tasks are enabled.  At inference the language softmax is
         # detached so gradient flows only through the base and language heads;
         # this keeps the heads independent while still sharing the signal.
-        self._use_lang_cond = (
-            "icf" in output_tasks and "language" in output_tasks
-        )
+        self._use_lang_cond = "icf" in output_tasks and "language" in output_tasks
         if self._use_lang_cond:
             self.lang_icf_cond = nn.Sequential(
                 nn.Linear(feature_dim + num_languages, max(feature_dim // 2, 8)),

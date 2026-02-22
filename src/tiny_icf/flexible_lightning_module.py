@@ -592,6 +592,7 @@ class FlexibleIDFLightningModule(LightningModule):
             else:
                 anc_preds = self.model(anc_bytes)
             import torch.nn.functional as _F  # already imported at top but guard
+
             anc_loss = _F.huber_loss(anc_preds, anc_targets, delta=0.1)
             loss = loss + self.anchor_loss_weight * anc_loss
             self.log("train_anchor_loss", anc_loss, on_step=True, on_epoch=True)
@@ -1136,6 +1137,7 @@ class FlexibleIDFLightningModule(LightningModule):
                     json_path = os.path.join(
                         self.trainer.log_dir, f"diagnostic_data_epoch_{current_epoch}.json"
                     )
+
                     def _to_py(v):
                         """Recursively convert numpy/torch scalars to plain Python types."""
                         if isinstance(v, dict):
