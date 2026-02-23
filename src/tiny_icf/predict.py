@@ -8,6 +8,7 @@ import numpy as np
 import torch
 import unicodedata
 
+from tiny_icf.calibration import apply_affine, load_calibration
 from tiny_icf.checkpoint import load_model
 from tiny_icf.language_detection import detect_languages, format_languages
 from tiny_icf.oov_calibration import (
@@ -51,6 +52,7 @@ def predict_icf(
     max_length: int = 20,
     saturation_fix: bool = False,
     saturation_fix_config: SaturationFixConfig = DEFAULT_SATURATION_FIX,
+    calibration: Optional[tuple[float, float]] = None,
 ) -> float | dict:
     """
     Predict ICF score for a single word.
@@ -98,6 +100,9 @@ def predict_icf(
 
     icf_score = icf_score_model
     saturation_fix_applied = False
+    if calibration is not None:
+        a, b = calibration
+        icf_score = apply_affine(icf_score, a, b)
     if saturation_fix:
         # If we don't have raw_output (no return_features support), we can't fix saturation.
         if raw_output is not None:
@@ -250,18 +255,34 @@ def main():
         default=float(DEFAULT_SATURATION_FIX.confidence_weight),
         help="Optional saturation-fix confidence weight (0 disables).",
     )
+    parser.add_argument(
+        "--calibration",
+        type=Path,
+        default=None,
+        help="Path to calibration JSON (a, b). Apply learned affine calibration.",
+    )
 
     args = parser.parse_args()
 
     # Device
     if args.device == "auto":
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        if torch.cuda.is_available():
+            device = torch.device("cuda")
+        elif getattr(torch.backends, "mps", None) and torch.backends.mps.is_available():
+            device = torch.device("mps")
+        else:
+            device = torch.device("cpu")
     else:
         device = torch.device(args.device)
 
     # Load model
     model, _checkpoint = load_model(args.model, device=device)
     model.eval()
+
+    # Optional learned calibration
+    cal = load_calibration(args.calibration) if args.calibration else None
+    if args.calibration and cal is None:
+        raise SystemExit(f"Calibration file not found or invalid: {args.calibration}")
 
     # Parse words (handle both string and list)
     words = args.words.split() if isinstance(args.words, str) else args.words
@@ -286,6 +307,7 @@ def main():
                 max_length=args.max_length,
                 saturation_fix=bool(args.saturation_fix),
                 saturation_fix_config=fix_config,
+                calibration=cal,
             )
             results.append(result)
         else:
@@ -297,6 +319,7 @@ def main():
                 max_length=args.max_length,
                 saturation_fix=bool(args.saturation_fix),
                 saturation_fix_config=fix_config,
+                calibration=cal,
             )
             result = {
                 "word": word,

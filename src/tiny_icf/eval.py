@@ -282,6 +282,7 @@ def evaluate_jabberwocky(
     *,
     saturation_fix: bool = False,
     saturation_fix_config: SaturationFixConfig = DEFAULT_SATURATION_FIX,
+    calibration: Optional[Tuple[float, float]] = None,
 ) -> Dict[str, Any]:
     """
     Evaluate model on Jabberwocky Protocol (pseudo-words).
@@ -354,6 +355,10 @@ def evaluate_jabberwocky(
                     raw_output = None
                     applied = False
 
+        if calibration is not None:
+            a, b = calibration
+            icf = max(0.0, min(1.0, a + b * icf))
+
         passed = min_icf <= icf <= max_icf
         results.append(
             {
@@ -386,6 +391,7 @@ def evaluate_on_dataset(
     device: torch.device,
     max_samples: Optional[int] = None,
     batch_size: int = 64,
+    calibration: Optional[Tuple[float, float]] = None,
 ) -> Dict[str, Any]:
     """
     Evaluate model on a dataset.
@@ -440,6 +446,13 @@ def evaluate_on_dataset(
     # Concatenate
     predictions = torch.cat(all_predictions).numpy()
     targets = torch.cat(all_targets).numpy()
+
+    # Optional learned affine calibration (a + b * pred, clip to [0,1])
+    if calibration is not None:
+        a, b = calibration
+        predictions = np.clip(a + b * predictions.astype(np.float64), 0.0, 1.0).astype(
+            predictions.dtype
+        )
 
     # Compute metrics
     metrics = compute_metrics(predictions, targets)

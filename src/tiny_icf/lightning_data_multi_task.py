@@ -138,12 +138,13 @@ class MultiTaskIDFDataModule(LightningDataModule):
             train_samples_raw = all_samples[:split_idx]
             val_samples_raw = all_samples[split_idx:]
 
-            # Stratified sampling for training
+            # Stratified sampling for training (optionally weighted by token frequency so head words like "the" get proper gradient signal)
             train_word_icf = dict(train_samples_raw)
+            train_word_counts = {w: word_counts_clean.get(w, 1) for w in train_word_icf}
             self.train_samples = stratified_sample(
                 train_word_icf,
-                word_counts=None,
-                use_token_frequency=False,
+                word_counts=train_word_counts,
+                use_token_frequency=True,
                 max_samples=self.train_max_samples,
             )
 
@@ -154,12 +155,13 @@ class MultiTaskIDFDataModule(LightningDataModule):
             schedule = get_stage_schedule(self.max_epochs, self.curriculum_stages)
             self.curriculum = CurriculumSampler(stages, schedule, warmup_epochs=self.warmup_epochs)
 
-            # Validation set
+            # Validation set (same frequency-weighted sampling for consistent metrics)
             val_word_icf = dict(val_samples_raw)
+            val_word_counts = {w: word_counts_clean.get(w, 1) for w in val_word_icf}
             self.val_samples = stratified_sample(
                 val_word_icf,
-                word_counts=None,
-                use_token_frequency=False,
+                word_counts=val_word_counts,
+                use_token_frequency=True,
                 max_samples=self.val_max_samples,
             )
             self.val_dataset = MultiTaskICFDataset(

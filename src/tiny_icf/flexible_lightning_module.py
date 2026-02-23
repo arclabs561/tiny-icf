@@ -193,6 +193,7 @@ class FlexibleIDFLightningModule(LightningModule):
                 amoo_curvature_weight=config.get("amoo_curvature_weight", 0.1),
                 icf_spearman_weight=config.get("spearman_weight", 10.0),
                 icf_spearman_reg_strength=config.get("spearman_reg_strength", 1.0),
+                icf_spearman_method=config.get("spearman_method", "auto"),
                 ranking_reg_strength=config.get("ranking_reg_strength", 1.0),
             )
             self.use_research_aligned_loss = False

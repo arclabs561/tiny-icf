@@ -169,6 +169,24 @@ def main() -> int:
             "(default 2.0; try 0.0 for Huber-only, 10.0 for rank-heavy)."
         ),
     )
+    p.add_argument(
+        "--spearman-reg-strength",
+        type=float,
+        default=0.1,
+        help=(
+            "Regularization strength for soft Spearman (higher = stable gradients, "
+            "lower = closer to true Spearman; default 0.1)."
+        ),
+    )
+    p.add_argument(
+        "--spearman-method",
+        type=str,
+        default="auto",
+        choices=("auto", "torchsort", "sigmoid", "neural_sort", "probabilistic", "smooth_i"),
+        help=(
+            "Spearman backend: auto (prefer torchsort if installed), torchsort, sigmoid, etc."
+        ),
+    )
 
     args = p.parse_args()
 
@@ -243,6 +261,8 @@ def main() -> int:
         ],
         # ICF ranking / Spearman regularizer
         "spearman_weight": float(args.spearman_weight),
+        "spearman_reg_strength": float(args.spearman_reg_strength),
+        "spearman_method": args.spearman_method,
         "n_pairs": 16,
         "min_diff": 0.05,
         "use_weighted_sampling": True,

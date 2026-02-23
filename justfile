@@ -47,6 +47,10 @@ check-training:
     echo "=== v4 ==="
     uv run python scripts/watch_training.py models/all_fronts_v4/logs/lightning_logs/version_0/metrics.csv
 
+# Fit learned affine calibration (a, b) on data; writes <model>.pt.cal.json
+fit-calibration MODEL="models/multitask_all_fronts_v3b.pt" DATA="data/word_frequency.csv" CAL_RATIO="0.2":
+    uv run python scripts/fit_calibration.py --model {{MODEL}} --data {{DATA}} --cal-ratio {{CAL_RATIO}}
+
 # OOV calibration eval: composed vs gibberish (saturation + AUROC)
 oov N="2000" MODEL="models/universal_50k_20ep.pt" DATA="data/word_frequency.csv" FIX_CENTER="1.0" FIX_SCALE="0.25" FIX_CONF_WEIGHT="0.0" *args:
     #!/usr/bin/env bash

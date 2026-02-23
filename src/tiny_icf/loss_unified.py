@@ -29,6 +29,15 @@ except ImportError:
     HAS_RANK_RELAX = False
     print("Warning: rank-relax not available, falling back to built-in implementations")
 
+# Prefer torchsort for Spearman when available (O(n log n), stable gradients)
+try:
+    from tiny_icf.loss import _try_import_torchsort, spearman_loss_torchsort
+
+    HAS_TORCHSORT = _try_import_torchsort() is not None
+except Exception:
+    HAS_TORCHSORT = False
+    spearman_loss_torchsort = None
+
 
 def _to_list(tensor: torch.Tensor) -> List[float]:
     """Convert tensor to Python list for rank-relax."""
@@ -147,22 +156,27 @@ def spearman_loss_tensor(
     adaptive: bool = False,
 ) -> torch.Tensor:
     """
-    Compute Spearman correlation loss using rank-relax.
+    Compute Spearman correlation loss (1 - Spearman).
 
-    Research-aligned: Supports adaptive regularization and multiple methods.
-
-    Loss = 1 - Spearman correlation (so lower is better).
+    Prefer torchsort when method is "torchsort" or "auto" and torchsort is installed
+    (O(n log n), stable gradients). Otherwise use rank_relax or built-in sigmoid.
 
     Args:
         predictions: Model predictions [n] or [batch, n]
         targets: Ground truth values [n] or [batch, n]
         regularization_strength: Temperature for soft ranking
-        method: Ranking method ("sigmoid", "neural_sort", "probabilistic", "smooth_i")
-        adaptive: If True, adapt regularization based on data scale
+        method: "auto" (prefer torchsort), "torchsort", "sigmoid", "neural_sort", etc.
+        adaptive: If True, adapt regularization based on data scale (non-torchsort path)
 
     Returns:
         Loss tensor (scalar or [batch])
     """
+    use_torchsort = (method in ("torchsort", "auto")) and HAS_TORCHSORT and spearman_loss_torchsort
+    if use_torchsort and predictions.numel() >= 2:
+        return spearman_loss_torchsort(
+            predictions, targets, regularization_strength=regularization_strength
+        )
+
     if not HAS_RANK_RELAX:
         # Fallback: use soft ranking and compute correlation manually
         pred_ranks = soft_rank_tensor(
@@ -249,7 +263,7 @@ class ICFPredictionLoss(nn.Module):
         huber_delta: float = 0.1,
         spearman_weight: float = 10.0,
         spearman_reg_strength: float = 1.0,
-        spearman_method: str = "sigmoid",  # "sigmoid", "neural_sort", "probabilistic", "smooth_i"
+        spearman_method: str = "auto",  # "auto" (prefer torchsort), "torchsort", "sigmoid", "neural_sort", ...
         spearman_adaptive: bool = False,  # Use adaptive regularization
         rank_weight: float = 0.5,
         rank_margin: float = 0.1,
@@ -792,7 +806,7 @@ class UnifiedMultiTaskLoss(nn.Module):
         # Loss-specific settings
         icf_spearman_weight: float = 10.0,
         icf_spearman_reg_strength: float = 1.0,
-        icf_spearman_method: str = "sigmoid",  # Research: try "neural_sort" for sharper rankings
+        icf_spearman_method: str = "auto",  # "auto" (prefer torchsort), "torchsort", "sigmoid", ...
         icf_spearman_adaptive: bool = False,  # Research: adaptive regularization matches data scale
         ranking_reg_strength: float = 1.0,
     ):

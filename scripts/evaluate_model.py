@@ -9,6 +9,7 @@ from pathlib import Path
 import torch
 import numpy as np
 
+from tiny_icf.calibration import load_calibration
 from tiny_icf.checkpoint import load_model
 from tiny_icf.data import (
     WordICFDataset,
@@ -63,7 +64,13 @@ def main():
         choices=["log", "rank"],
         help="Target definition for dataset evaluation: 'log' or 'rank'.",
     )
-    
+    parser.add_argument(
+        "--calibration",
+        type=Path,
+        default=None,
+        help="Path to calibration JSON (a, b). Apply learned affine calibration to predictions.",
+    )
+
     args = parser.parse_args()
     random.seed(42)
     
@@ -89,10 +96,16 @@ def main():
     model, _checkpoint = load_model(args.model, device=device)
     model.eval()
     print("✓ Model loaded")
+
+    calibration = load_calibration(args.calibration) if args.calibration else None
+    if args.calibration and calibration is None:
+        raise SystemExit(f"Calibration file not found or invalid: {args.calibration}")
+    if calibration:
+        print(f"✓ Calibration loaded from {args.calibration}")
     print()
-    
+
     results = {}
-    
+
     # 1. Jabberwocky Protocol
     print("1. Jabberwocky Protocol")
     print("-" * 80)
@@ -108,6 +121,7 @@ def main():
         device,
         saturation_fix=bool(args.saturation_fix),
         saturation_fix_config=fix_config,
+        calibration=calibration,
     )
     results['jabberwocky'] = jabberwocky_results
     
@@ -150,13 +164,14 @@ def main():
         print(f"Dataset size: {len(dataset)} words")
         print("Evaluating...")
         
-        # Evaluate
+        # Evaluate (optionally with learned calibration)
         eval_results = evaluate_on_dataset(
             model,
             dataset,
             device,
             max_samples=args.max_samples,
             batch_size=64,
+            calibration=calibration,
         )
         
         results['dataset'] = eval_results

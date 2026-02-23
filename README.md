@@ -8,6 +8,7 @@ ICF is normalized to \([0, 1]\): **0.0 = very common**, **1.0 = very rare**.
 
 ```bash
 uv sync --extra dev
+# Optional: uv sync --extra sorting  (torchsort for differentiable Spearman in multi-task training)
 
 # Train
 uv run tiny-icf-train --help
@@ -167,3 +168,4 @@ Start with:
 - `docs/PROJECT_OVERVIEW.md`
 - `docs/guides/QUICK_START.md`
 - `docs/guides/TRAINING_GUIDE.md`
+- `docs/guides/MAKING_IT_GOOD_MINIMAL_HEURISTICS.md` — improve calibration and ranking with minimal heuristics (frequency sampling, differentiable Spearman, learned calibration). **Calibration:** `uv run python scripts/fit_calibration.py --model models/<name>.pt --data data/word_frequency.csv` then `--calibration <name>.pt.cal.json` in predict or evaluate_model.
