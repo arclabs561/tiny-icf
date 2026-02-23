@@ -20,7 +20,7 @@ Research-backed, low-heuristic improvements. No hand-picked anchor words or ad-h
 
 **Fix:** Use **differentiable Spearman** via soft sorting (Blondel et al., "Fast Differentiable Sorting and Ranking", ICML 2020; [arxiv 2002.08871](https://arxiv.org/abs/2002.08871)). Loss = \( \frac{1}{2}\|r - r_\Psi(\theta)\|^2 \) where \( r_\Psi \) are soft ranks. Implementations: **torchsort** (O(n log n), recommended), **diffsort** (O(n²(log n)²)).
 
-**Implemented:** `loss_unified.spearman_loss_tensor` with `spearman_method="auto"` (default): use **torchsort** if available, else **diffsort**, else rank_relax or built-in soft_rank. All paths are differentiable. Install `uv sync --extra sorting` for torchsort and/or diffsort. At training start we log `Spearman loss backend: <torchsort|diffsort|rank_relax|built-in>`. CLI: `--spearman-reg-strength 0.1`, `--spearman-method auto|torchsort|diffsort|sigmoid`.
+**Implemented:** `loss_unified.spearman_loss_tensor` with `spearman_method="auto"` (default): use **torchsort** if available, else **diffsort** (default dependency), else rank_relax or built-in soft_rank. All paths are differentiable. At training start we log `Spearman loss backend: <torchsort|diffsort|rank_relax|built-in>`. CLI: `--spearman-reg-strength 0.1`, `--spearman-method auto|torchsort|diffsort|sigmoid`.
 
 ---
 

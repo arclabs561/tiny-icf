@@ -8,7 +8,7 @@ ICF is normalized to \([0, 1]\): **0.0 = very common**, **1.0 = very rare**.
 
 ```bash
 uv sync --extra dev
-# Recommended for multi-task training: uv sync --extra sorting  (torchsort or diffsort for differentiable Spearman; backend is logged at train start)
+# Differentiable Spearman (diffsort) is a default dependency; backend logged at train start
 
 # Train
 uv run tiny-icf-train --help

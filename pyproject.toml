@@ -10,11 +10,12 @@ dependencies = [
     "numpy>=1.24.0",
     "pandas>=2.0.0",
     "tqdm>=4.65.0",
-    "scipy>=1.10.0", # For correlation metrics
-    "lightning>=2.0.0", # PyTorch Lightning for non-interactive training
-    "aim>=3.29.0", # Experiment tracking
-    "requests>=2.31.0", # For dataset downloading
+    "scipy>=1.10.0",  # For correlation metrics
+    "lightning>=2.0.0",  # PyTorch Lightning for non-interactive training
+    "aim>=3.29.0",  # Experiment tracking
+    "requests>=2.31.0",  # For dataset downloading
     "wordfreq>=3.1.1",
+    "diffsort>=0.1.0",  # Differentiable Spearman (sorting networks); torchsort used if installed
 ]
 
 [project.optional-dependencies]
@@ -30,10 +31,6 @@ dependencies = [
     distillation = [
         "sentence-transformers>=2.2.0",  # Lightweight teacher models
         "transformers>=4.30.0",  # For BERT/RoBERTa teacher models (optional)
-    ]
-    sorting = [
-        "diffsort>=0.1.0",  # Differentiable sorting networks (ICLR 2022)
-        "torchsort>=0.1.6",  # Fast differentiable sorting (O(n log n), recommended)
     ]
 
 [project.scripts]

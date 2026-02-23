@@ -64,7 +64,7 @@ sync-s3:
     aws s3 sync models/ s3://arclabs-backups/tiny-icf/models/ --exclude "*" --include "multitask_*.pt" --include "v3_base*.pt" --include "*.pt.cal.json"
 
 # English-only training (better "the"/"and", no lang prefix); uses frequency sampling + spearman-method auto
-# For differentiable Spearman: uv sync --extra sorting (torchsort or diffsort; backend logged at start)
+# Differentiable Spearman (diffsort by default; torchsort if installed); backend logged at start
 # For custom EPOCHS/SAMPLES run: uv run python scripts/train_all_fronts.py ... --epochs N --train-max-samples M
 train-en DATA="data/word_frequency.csv" EPOCHS="30" SAMPLES="200000":
     mkdir -p models/all_fronts_en
