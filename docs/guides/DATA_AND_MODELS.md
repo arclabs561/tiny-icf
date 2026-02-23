@@ -62,7 +62,7 @@ tiny-icf/
 | `multitask_all_fronts_v3.pt` | 46% | 0.26 | 0.14 | OOV calibration, pseudo-words |
 | `multitask_all_fronts_v3b.pt` | 31% | 0.09 | 0.18–0.29 | Dataset fit, ranking (best ckpt ep28). With calibration: MAE 0.078, Spearman 0.29 |
 | `multitask_all_fronts_v4.pt` | 31% | 0.28 | 0.07 | Better "the"/common-word calibration (124K params) |
-| `multitask_en.pt` | — | — | — | English-only; freq-weighted sampling with replacement (best ep1, val_loss 1.63). Uncalibrated: "the" 0.00, "and" 0.00, "of" 0.05 (targets ~0.14, ~0.17). Debug: `just debug-the MODEL=models/multitask_en.pt` |
+| `multitask_en.pt` | 62% | 0.12 | 0.08 | English-only; freq-weighted sampling with replacement (best ep1). With calibration: MAE 0.12, Jabberwocky 62%. Head words "the"/"and"/"is" in band. Debug: `just debug-the MODEL=models/multitask_en.pt` |
 
 Download from S3: `aws s3 cp s3://arclabs-backups/tiny-icf/models/<name>.pt models/`
 
