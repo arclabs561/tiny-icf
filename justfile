@@ -51,6 +51,25 @@ check-training:
 fit-calibration MODEL="models/multitask_all_fronts_v3b.pt" DATA="data/word_frequency.csv" CAL_RATIO="0.2":
     uv run python scripts/fit_calibration.py --model {{MODEL}} --data {{DATA}} --cal-ratio {{CAL_RATIO}}
 
+# Eval v3b with calibration (requires model + data + cal file)
+eval-v3b-cal MODEL="models/multitask_all_fronts_v3b.pt" DATA="data/word_frequency.csv" CAL="models/multitask_all_fronts_v3b.pt.cal.json":
+    uv run python scripts/evaluate_model.py --model {{MODEL}} --data {{DATA}} --calibration {{CAL}}
+
+# Sync .pt and .cal.json to S3
+sync-s3:
+    aws s3 sync models/ s3://arclabs-backups/tiny-icf/models/ --exclude "*" --include "multitask_all_fronts*.pt" --include "v3_base*.pt" --include "*.pt.cal.json"
+
+# English-only training (better "the"/"and", no lang prefix); uses frequency sampling + spearman-method auto
+train-en DATA="data/word_frequency.csv" EPOCHS="30" SAMPLES="200000":
+    mkdir -p models/all_fronts_en
+    uv run python scripts/train_all_fronts.py \
+      --data {{DATA}} \
+      --output-dir models/all_fronts_en \
+      --export models/multitask_en.pt \
+      --no-language --no-era \
+      --hygiene --hygiene-noise-ratio 0.25 \
+      --epochs {{EPOCHS}} --train-max-samples {{SAMPLES}}
+
 # OOV calibration eval: composed vs gibberish (saturation + AUROC)
 oov N="2000" MODEL="models/universal_50k_20ep.pt" DATA="data/word_frequency.csv" FIX_CENTER="1.0" FIX_SCALE="0.25" FIX_CONF_WEIGHT="0.0" *args:
     #!/usr/bin/env bash

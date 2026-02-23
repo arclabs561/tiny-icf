@@ -141,13 +141,13 @@ uv run python scripts/train_all_fronts.py \
 No training data or model files are committed (large, user-specific). Train locally; artifacts go in `models/` (gitignored).
 
 - **Pre-trained:** Model selection table and S3 download: `docs/guides/DATA_AND_MODELS.md`.
-- **Publish:** `./scripts/upload_model_to_s3.sh models/<name>.pt s3://your-bucket/tiny-icf/`.
+- **Publish:** `./scripts/upload_model_to_s3.sh models/<name>.pt s3://your-bucket/tiny-icf/`. After training: `just fit-calibration` then `just sync-s3` (or the sync command in DATA_AND_MODELS).
 - **Data format:** CSV with `word,count` (optional header). See `tiny_icf.data.load_frequency_list`.
 
 ## Evaluate (Jabberwocky + MAE/Spearman)
 
 ```bash
-# Full: Jabberwocky protocol + dataset metrics
+# Full: Jabberwocky protocol + dataset metrics (add --calibration <path> for calibrated MAE)
 uv run python scripts/evaluate_model.py --model models/<name>.pt --data data/word_frequency.csv
 
 # Jabberwocky only (13 probe words)
