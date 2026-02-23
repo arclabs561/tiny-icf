@@ -8,9 +8,9 @@ Research-backed, low-heuristic improvements. No hand-picked anchor words or ad-h
 
 **Problem:** The head of the distribution ("the", "and") is under-represented in training. We use stratified sampling (head/body/tail) but **uniform within each stratum**, so "the" appears no more often than other head words.
 
-**Fix:** Sample **weighted by token frequency** within strata. Then the model sees "the" as often as it appears in the world; gradients for the head come from real data, not a fixed list.
+**Fix:** Sample **weighted by token frequency** within strata, with **replacement** so high-count words can appear many times per epoch. Then the model sees "the" as often as it appears in the world; gradients for the head come from real data, not a fixed list.
 
-**Where:** `lightning_data_multi_task.py`. **Implemented:** we now pass `word_counts=train_word_counts` (and `val_word_counts`) and `use_token_frequency=True` so training and validation sample within each stratum by token frequency. No hand-picked word list; the data distribution drives the head.
+**Where:** `data.stratified_sample` (when `use_token_frequency=True` we use `replace=True` so head words are drawn proportionally to count); `lightning_data_multi_task.py` passes `word_counts` and `use_token_frequency=True`. No hand-picked word list; the data distribution drives the head.
 
 ---
 

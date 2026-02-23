@@ -207,14 +207,14 @@ def stratified_sample(
             return []
 
         if weights is not None and use_token_frequency:
-            # Weighted sampling by token frequency
-            weights = np.array(weights)
-            weights = weights / weights.sum()  # Normalize
-            indices = np.random.choice(
-                len(items), size=min(n_samples, len(items)), replace=False, p=weights
-            )
+            # Weighted sampling by token frequency: draw with replacement so high-count
+            # words (e.g. "the") appear many times per epoch and get proper gradient.
+            weights = np.array(weights, dtype=np.float64)
+            weights = weights / weights.sum()
+            size = n_samples  # allow repeated draws so head words are seen often
+            indices = np.random.choice(len(items), size=size, replace=True, p=weights)
         else:
-            # Uniform sampling
+            # Uniform sampling (each word at most once per stratum)
             indices = np.random.choice(len(items), size=min(n_samples, len(items)), replace=False)
 
         return [items[i] for i in indices]
