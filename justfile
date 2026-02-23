@@ -55,11 +55,17 @@ fit-calibration MODEL="models/multitask_all_fronts_v3b.pt" DATA="data/word_frequ
 eval-v3b-cal MODEL="models/multitask_all_fronts_v3b.pt" DATA="data/word_frequency.csv" CAL="models/multitask_all_fronts_v3b.pt.cal.json":
     uv run python scripts/evaluate_model.py --model {{MODEL}} --data {{DATA}} --calibration {{CAL}}
 
-# Sync .pt and .cal.json to S3
+# Debug head-word predictions (base vs lang correction; --data shows target ICF)
+debug-the MODEL="models/multitask_all_fronts_v3b.pt" DATA="data/word_frequency.csv" *args:
+    uv run python scripts/debug_the_prediction.py --model {{MODEL}} --data {{DATA}} {{args}}
+
+# Sync .pt and .cal.json to S3 (multitask_all_fronts*, multitask_en, v3_base*, *.pt.cal.json)
 sync-s3:
-    aws s3 sync models/ s3://arclabs-backups/tiny-icf/models/ --exclude "*" --include "multitask_all_fronts*.pt" --include "v3_base*.pt" --include "*.pt.cal.json"
+    aws s3 sync models/ s3://arclabs-backups/tiny-icf/models/ --exclude "*" --include "multitask_*.pt" --include "v3_base*.pt" --include "*.pt.cal.json"
 
 # English-only training (better "the"/"and", no lang prefix); uses frequency sampling + spearman-method auto
+# For custom EPOCHS/SAMPLES run: uv run python scripts/train_all_fronts.py ... --epochs N --train-max-samples M
+# Background run: nohup uv run python scripts/train_all_fronts.py ... > models/all_fronts_en/train_en_30ep.log 2>&1 &
 train-en DATA="data/word_frequency.csv" EPOCHS="30" SAMPLES="200000":
     mkdir -p models/all_fronts_en
     uv run python scripts/train_all_fronts.py \
@@ -69,6 +75,18 @@ train-en DATA="data/word_frequency.csv" EPOCHS="30" SAMPLES="200000":
       --no-language --no-era \
       --hygiene --hygiene-noise-ratio 0.25 \
       --epochs {{EPOCHS}} --train-max-samples {{SAMPLES}}
+
+# Check English-only training status / tail log (when run in background)
+train-en-status:
+    #!/usr/bin/env bash
+    if [ -f models/all_fronts_en/train_en.pid ]; then
+      PID=$(cat models/all_fronts_en/train_en.pid)
+      if ps -p "$PID" > /dev/null 2>&1; then echo "Training running (PID $PID)"; else echo "Process $PID not running"; fi
+    else
+      echo "No train_en.pid (run training in background and save PID to models/all_fronts_en/train_en.pid)"
+    fi
+    echo "---"
+    tail -25 models/all_fronts_en/train_en_30ep.log 2>/dev/null || echo "No log yet"
 
 # OOV calibration eval: composed vs gibberish (saturation + AUROC)
 oov N="2000" MODEL="models/universal_50k_20ep.pt" DATA="data/word_frequency.csv" FIX_CENTER="1.0" FIX_SCALE="0.25" FIX_CONF_WEIGHT="0.0" *args:
