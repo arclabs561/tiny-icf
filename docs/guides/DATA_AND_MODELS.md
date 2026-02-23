@@ -60,12 +60,14 @@ tiny-icf/
 | Model | Jabberwocky | MAE | Spearman | Use when |
 |-------|-------------|-----|----------|----------|
 | `multitask_all_fronts_v3.pt` | 46% | 0.26 | 0.14 | OOV calibration, pseudo-words |
-| `multitask_all_fronts_v3b.pt` | 31% | 0.09 | 0.18–0.27 | Dataset fit, ranking quality (best ckpt, e.g. ep24) |
+| `multitask_all_fronts_v3b.pt` | 31% | 0.09 | 0.18–0.29 | Dataset fit, ranking (best ckpt ep28). With calibration: MAE 0.078, Spearman 0.29 |
 | `multitask_all_fronts_v4.pt` | 31% | 0.28 | 0.07 | Better "the"/common-word calibration (124K params) |
 
 Download from S3: `aws s3 cp s3://arclabs-backups/tiny-icf/models/<name>.pt models/`
 
-Sync to S3 (as needed): `aws s3 sync models/ s3://arclabs-backups/tiny-icf/models/ --exclude "*" --include "multitask_all_fronts*.pt" --include "v3_base*.pt"`. When a run finishes, the train script exports from best checkpoint; then run this sync.
+**Calibration:** Fit affine calibration for better MAE: `uv run python scripts/fit_calibration.py --model models/<name>.pt --data data/word_frequency.csv` → writes `<name>.pt.cal.json`. Use `--calibration models/<name>.pt.cal.json` with predict or evaluate_model. Pre-fit calibration for v3b is on S3: `aws s3 cp s3://arclabs-backups/tiny-icf/models/multitask_all_fronts_v3b.pt.cal.json models/`.
+
+Sync to S3 (as needed): `aws s3 sync models/ s3://arclabs-backups/tiny-icf/models/ --exclude "*" --include "multitask_all_fronts*.pt" --include "v3_base*.pt" --include "*.pt.cal.json"`. When a run finishes, the train script exports from best checkpoint; then run `just fit-calibration` (or the script), then this sync.
 
 ## Model Storage: Repo vs Local vs S3
 
