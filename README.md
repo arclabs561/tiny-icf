@@ -126,12 +126,13 @@ just check-training
 
 # Evaluate (Jabberwocky + MAE/Spearman): see "Evaluate" section below.
 
-# English-only (no lang prefix): better "the"/"and" via frequency-weighted sampling (with replacement)
+# English-only: frequency-weighted sampling, differentiable Spearman (default weight 5). Saves best-by-loss and best-by-Spearman.
 # Monitor: just train-en-status
 uv run python scripts/train_all_fronts.py \
   --data data/word_frequency.csv \
   --output-dir models/all_fronts_en \
   --export models/multitask_en.pt \
+  --export-best-by-spearman models/multitask_en_best_spearman.pt \
   --no-language --no-era \
   --hygiene --hygiene-noise-ratio 0.25 \
   --epochs 30 --train-max-samples 200000

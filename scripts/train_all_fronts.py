@@ -163,10 +163,10 @@ def main() -> int:
     p.add_argument(
         "--spearman-weight",
         type=float,
-        default=2.0,
+        default=5.0,
         help=(
             "Weight for Spearman soft-rank regularization in the ICF loss "
-            "(default 2.0; try 0.0 for Huber-only, 10.0 for rank-heavy)."
+            "(default 5.0; try 0.0 for Huber-only, 10.0 for rank-heavy)."
         ),
     )
     p.add_argument(
@@ -182,13 +182,27 @@ def main() -> int:
         "--spearman-method",
         type=str,
         default="auto",
-        choices=("auto", "torchsort", "sigmoid", "neural_sort", "probabilistic", "smooth_i"),
+        choices=("auto", "torchsort", "diffsort", "sigmoid", "neural_sort", "probabilistic", "smooth_i"),
         help=(
-            "Spearman backend: auto (prefer torchsort if installed), torchsort, sigmoid, etc."
+            "Spearman backend: auto (torchsort then diffsort), torchsort, diffsort, sigmoid, etc."
         ),
+    )
+    p.add_argument(
+        "--save-best-by-spearman",
+        action="store_true",
+        help="Also save the checkpoint with best val_spearman_corr (for ranking-focused use).",
+    )
+    p.add_argument(
+        "--export-best-by-spearman",
+        type=Path,
+        default=None,
+        metavar="PATH",
+        help="If set, export the best-by-Spearman checkpoint to this path (requires --save-best-by-spearman).",
     )
 
     args = p.parse_args()
+    if args.export_best_by_spearman is not None and not args.save_best_by_spearman:
+        args.save_best_by_spearman = True
 
     decades: Sequence[int] = _parse_decades(args.temporal_decades)
 
@@ -314,12 +328,22 @@ def main() -> int:
         save_top_k=3,
         save_last=True,
     )
+    callbacks: list = [ckpt_cb]
+    ckpt_spearman_cb = None
+    if args.save_best_by_spearman:
+        ckpt_spearman_cb = ModelCheckpoint(
+            dirpath=args.output_dir,
+            filename="best_spearman-{epoch:02d}-{val_spearman_corr:.4f}",
+            monitor="val_spearman_corr",
+            mode="max",
+            save_top_k=1,
+        )
+        callbacks.append(ckpt_spearman_cb)
     lr_cb = LearningRateMonitor(logging_interval="epoch")
     early_cb = EarlyStopping(monitor="val_loss", mode="min", patience=int(args.early_stopping_patience))
+    callbacks.extend([lr_cb, early_cb])
 
     logger = CSVLogger(save_dir=str(args.output_dir / "logs"))
-
-    callbacks = [ckpt_cb, lr_cb, early_cb]
 
     class _CurriculumCallback(Callback):
         def __init__(self, dm: MultiTaskIDFDataModule):
@@ -382,6 +406,30 @@ def main() -> int:
             "train_args": vars(args),
         }
         torch.save(export_ckpt, export_path)
+
+        # Optional: export best-by-Spearman checkpoint for ranking-focused use
+        if args.export_best_by_spearman and ckpt_spearman_cb is not None:
+            best_spearman_path = getattr(ckpt_spearman_cb, "best_model_path", None)
+            if best_spearman_path and Path(best_spearman_path).exists():
+                lightning_ckpt = torch.load(best_spearman_path, map_location="cpu", weights_only=False)
+                sd = lightning_ckpt.get("state_dict", {})
+                model_sd = {
+                    k[6:]: v
+                    for k, v in sd.items()
+                    if k.startswith("model.") and not k.startswith("model.criterion")
+                }
+                module.model.load_state_dict(model_sd, strict=False)
+                export_ckpt_spearman = {
+                    "model_type": "MultiTaskICF",
+                    "model_kwargs": export_ckpt["model_kwargs"],
+                    "model_state_dict": module.model.state_dict(),
+                    "train_args": {**export_ckpt.get("train_args", {}), "best_by": "val_spearman_corr"},
+                }
+                args.export_best_by_spearman.parent.mkdir(parents=True, exist_ok=True)
+                torch.save(export_ckpt_spearman, args.export_best_by_spearman)
+                print(f"  Exported best-by-Spearman: {args.export_best_by_spearman}")
+            else:
+                print("  (No best-by-Spearman checkpoint to export)")
 
     return 0
 

@@ -72,6 +72,7 @@ train-en DATA="data/word_frequency.csv" EPOCHS="30" SAMPLES="200000":
       --data {{DATA}} \
       --output-dir models/all_fronts_en \
       --export models/multitask_en.pt \
+      --export-best-by-spearman models/multitask_en_best_spearman.pt \
       --no-language --no-era \
       --hygiene --hygiene-noise-ratio 0.25 \
       --epochs {{EPOCHS}} --train-max-samples {{SAMPLES}}

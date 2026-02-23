@@ -555,10 +555,9 @@ def spearman_loss_diffsort(
     # Pad to next power of 2 for bitonic sort
     next_power = 2 ** (batch_size - 1).bit_length()
     if next_power > batch_size:
-        # Pad with minimum values
         pad_size = next_power - batch_size
-        min_pred = predictions.min() - 1.0
-        min_target = targets.min() - 1.0
+        min_pred = (predictions.min() - 1.0).item()
+        min_target = (targets.min() - 1.0).item()
         pred_padded = torch.cat(
             [predictions, torch.full((pad_size,), min_pred, device=predictions.device)]
         )
@@ -569,19 +568,20 @@ def spearman_loss_diffsort(
         pred_padded = predictions
         target_padded = targets
 
-    # Create sorters
+    # Diffsort's sorting network is CPU-bound; run on CPU then move loss back to input device
+    device = predictions.device
+    pred_padded = pred_padded.cpu()
+    target_padded = target_padded.cpu()
+
     pred_sorter = DiffSortNet("bitonic", next_power, steepness=steepness)
     target_sorter = DiffSortNet("bitonic", next_power, steepness=steepness)
 
-    # Get sorted values and permutation matrices
     pred_sorted, pred_perm = pred_sorter(pred_padded.unsqueeze(0))
     target_sorted, target_perm = target_sorter(target_padded.unsqueeze(0))
 
-    # Extract ranks from permutation matrices (sum of columns gives rank)
     pred_ranks = pred_perm.squeeze(0).sum(dim=0)[:batch_size] + 1.0
     target_ranks = target_perm.squeeze(0).sum(dim=0)[:batch_size] + 1.0
 
-    # Compute Spearman correlation
     pred_ranks_centered = pred_ranks - pred_ranks.mean()
     target_ranks_centered = target_ranks - target_ranks.mean()
 
@@ -590,11 +590,9 @@ def spearman_loss_diffsort(
     target_std = torch.sqrt((target_ranks_centered**2).sum() + 1e-8)
 
     spearman = numerator / (pred_std * target_std + 1e-8)
-
-    # Loss = 1 - Spearman
     loss = 1.0 - spearman
 
-    return loss
+    return loss.to(device)
 
 
 class SpearmanLoss(nn.Module):
