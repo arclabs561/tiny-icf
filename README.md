@@ -126,7 +126,8 @@ just check-training
 
 # Evaluate (Jabberwocky + MAE/Spearman): see "Evaluate" section below.
 
-# English-only (no lang prefix): better "the"/"and" calibration
+# English-only (no lang prefix): better "the"/"and" via frequency-weighted sampling (with replacement)
+# Monitor: just train-en-status
 uv run python scripts/train_all_fronts.py \
   --data data/word_frequency.csv \
   --output-dir models/all_fronts_en \
