@@ -278,6 +278,11 @@ def main() -> int:
         },
     }
 
+    from tiny_icf.loss_unified import get_spearman_backend
+
+    spearman_backend = get_spearman_backend(config.get("spearman_method", "auto"))
+    print(f"Spearman loss backend: {spearman_backend} (method={args.spearman_method})")
+
     module = FlexibleIDFLightningModule(config=config, learning_rate=args.lr, weight_decay=args.weight_decay)
 
     # Optional init-from: load a UniversalICF checkpoint into the base model.

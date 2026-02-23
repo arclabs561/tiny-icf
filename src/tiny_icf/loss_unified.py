@@ -38,6 +38,26 @@ except Exception:
     HAS_TORCHSORT = False
     spearman_loss_torchsort = None
 
+# Fallback: diffsort (differentiable sorting networks) when torchsort unavailable
+try:
+    from tiny_icf.loss import _try_import_diffsort, spearman_loss_diffsort
+
+    HAS_DIFFSORT = _try_import_diffsort() is not None
+except Exception:
+    HAS_DIFFSORT = False
+    spearman_loss_diffsort = None
+
+
+def get_spearman_backend(method: str = "auto") -> str:
+    """Return which backend will be used for Spearman loss (for logging)."""
+    if method in ("torchsort", "auto") and HAS_TORCHSORT and spearman_loss_torchsort is not None:
+        return "torchsort"
+    if method in ("diffsort", "auto") and HAS_DIFFSORT and spearman_loss_diffsort is not None:
+        return "diffsort"
+    if HAS_RANK_RELAX:
+        return "rank_relax"
+    return "built-in (soft_rank)"
+
 
 def _to_list(tensor: torch.Tensor) -> List[float]:
     """Convert tensor to Python list for rank-relax."""
@@ -176,6 +196,17 @@ def spearman_loss_tensor(
         return spearman_loss_torchsort(
             predictions, targets, regularization_strength=regularization_strength
         )
+
+    # Differentiable sorting fallback: diffsort when method is auto or diffsort
+    use_diffsort = (
+        (method in ("diffsort", "auto"))
+        and HAS_DIFFSORT
+        and spearman_loss_diffsort is not None
+        and predictions.numel() >= 2
+    )
+    if use_diffsort:
+        steepness = max(1.0, min(20.0, regularization_strength * 5.0))
+        return spearman_loss_diffsort(predictions, targets, steepness=steepness)
 
     if not HAS_RANK_RELAX:
         # Fallback: use soft ranking and compute correlation manually
