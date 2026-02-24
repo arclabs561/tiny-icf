@@ -155,7 +155,7 @@ uv run python scripts/evaluate_model.py --model models/<name>.pt --data data/wor
 # Jabberwocky only (13 probe words)
 uv run python scripts/evaluate_model.py --model models/<name>.pt --jabberwocky-only
 ```
-Use `models/toy.pt` with `data/toy_word_frequency.csv` for the smoke-test model; use `multitask_all_fronts_v3b.pt` (or v3/v4) with `data/word_frequency.csv` for pre-trained.
+Use `models/toy.pt` with `data/toy_word_frequency.csv` for the smoke-test model; use `multitask_all_fronts_v3b.pt` (or v3/v4) with `data/word_frequency.csv` for pre-trained. For English-only models with calibration: `just eval-en` or `just eval-en-spearman`.
 
 **Debugging head-word predictions:** If "the"/"and" are predicted too high (e.g. ~0.6 when target is ~0.14), run `just debug-the` (or `uv run python scripts/debug_the_prediction.py --model <path> --data data/word_frequency.csv`). The script prints base ICF, optional lang correction, and target from data. Root cause is usually underfitting of head words; use English-only training with frequency-weighted sampling (`just train-en`) to improve.
 

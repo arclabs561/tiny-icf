@@ -14,11 +14,11 @@ The Spearman loss implementation now supports multiple backends for differentiab
 - **Best for**: Production training, large batches, maximum performance
 
 ### 2. **diffsort**
-- **Source**: [Differentiable Sorting Networks](https://github.com/Felix-Petersen/diffsort) (Felix Petersen, ICLR 2022)
+- **Source**: [Differentiable Sorting Networks](https://github.com/Felix-Petersen/diffsort) (Felix Petersen, ICLR 2022). Implements Petersen et al.–style differentiable sorting networks (relaxed pairwise comparators); see arXiv 2105.04019, 2203.09630.
 - **Complexity**: O(n²(log n)²) - slower but more structured
 - **Performance**: Python-based, more interpretable
-- **Installation**: `pip install diffsort` (already in optional dependencies)
-- **Best for**: Research, when you need structured sorting networks
+- **Installation**: `pip install diffsort` (default dependency when torchsort unavailable)
+- **Best for**: Research, or when torchsort is not installed (e.g. ABI issues)
 
 ### 3. **built-in** (Fallback)
 - **Source**: Custom implementation using sigmoid-based soft ranking

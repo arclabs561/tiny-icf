@@ -1,7 +1,8 @@
 #!/usr/bin/env -S uv run
-"""Fit affine calibration (a, b) on a held-out set: min MSE(target, a + b * pred).
+"""Fit affine (linear) regression calibration on held-out ICF targets: min MSE(target, a + b * pred).
 
-Learned from data; no hand-picked words. Usage:
+Learned from data; no hand-picked words. Improves MAE and Jabberwocky; Spearman may stay similar.
+Usage:
   uv run python scripts/fit_calibration.py --model models/multitask_all_fronts_v3b.pt --data data/word_frequency.csv
   uv run python scripts/fit_calibration.py --model models/multitask.pt --data data/word_frequency.csv --cal-ratio 0.2 --output models/multitask.cal.json
 """

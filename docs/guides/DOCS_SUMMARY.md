@@ -10,9 +10,9 @@
 - `../docs/guides/EPHEMERAL_TRAINING.md` - Training on ephemeral environments (RunPod)
 - `../docs/results/EXPERIMENTS.md` - Experiment history and results
 
-Jabberwocky Protocol:
-- `../scripts/evaluate_model.py --jabberwocky-only`
-- `../tests/test_jabberwocky.py`
+Evaluation (Jabberwocky, MAE, Spearman):
+- `just eval-en` / `just eval-en-spearman` (en models with calibration); `../scripts/evaluate_model.py --model ... --data ... --calibration <path>`
+- Calibration improves MAE and Jabberwocky; Spearman may stay similar (see DATA_AND_MODELS).
 
 ## Archive
 Old documentation and logs are archived in `archive/` directory.

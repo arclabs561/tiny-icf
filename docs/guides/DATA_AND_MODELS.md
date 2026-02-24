@@ -67,7 +67,7 @@ tiny-icf/
 
 Download from S3: `aws s3 cp s3://arclabs-backups/tiny-icf/models/<name>.pt models/`
 
-**Calibration:** Fit affine calibration for better MAE: `just fit-calibration MODEL=models/<name>.pt DATA=data/word_frequency.csv` (or `uv run python scripts/fit_calibration.py ...`) → writes `<name>.pt.cal.json`. Eval with calibration: `just eval-en` / `just eval-en-spearman` or `uv run python scripts/evaluate_model.py --model ... --data ... --calibration <name>.pt.cal.json`. Pre-fit calibration for v3b is on S3: `aws s3 cp s3://arclabs-backups/tiny-icf/models/multitask_all_fronts_v3b.pt.cal.json models/`.
+**Calibration:** Affine calibration mainly improves **MAE and Jabberwocky** (common-word bands); **Spearman** may stay similar. Fit with: `just fit-calibration MODEL=models/<name>.pt DATA=data/word_frequency.csv` (or `uv run python scripts/fit_calibration.py ...`) → writes `<name>.pt.cal.json`. Eval with calibration: `just eval-en` / `just eval-en-spearman` or `uv run python scripts/evaluate_model.py --model ... --data ... --calibration <name>.pt.cal.json`. Pre-fit calibration for v3b is on S3: `aws s3 cp s3://arclabs-backups/tiny-icf/models/multitask_all_fronts_v3b.pt.cal.json models/`.
 
 Sync to S3: `just sync-s3` (or `aws s3 sync models/ s3://arclabs-backups/tiny-icf/models/ --exclude "*" --include "multitask_*.pt" --include "v3_base*.pt" --include "*.pt.cal.json"`). After training export and optional `just fit-calibration`, run sync to upload.
 
