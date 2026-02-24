@@ -2940,6 +2940,7 @@ version = "0.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "aim" },
+    { name = "diffsort" },
     { name = "lightning" },
     { name = "numpy", version = "2.2.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
     { name = "numpy", version = "2.3.5", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
@@ -2966,16 +2967,12 @@ distillation = [
 embeddings = [
     { name = "sentence-transformers" },
 ]
-sorting = [
-    { name = "diffsort" },
-    { name = "torchsort" },
-]
 
 [package.metadata]
 requires-dist = [
     { name = "aim", specifier = ">=3.29.0" },
     { name = "black", marker = "extra == 'dev'", specifier = ">=23.0.0" },
-    { name = "diffsort", marker = "extra == 'sorting'", specifier = ">=0.1.0" },
+    { name = "diffsort", specifier = ">=0.1.0" },
     { name = "lightning", specifier = ">=2.0.0" },
     { name = "numpy", specifier = ">=1.24.0" },
     { name = "pandas", specifier = ">=2.0.0" },
@@ -2987,12 +2984,11 @@ requires-dist = [
     { name = "sentence-transformers", marker = "extra == 'distillation'", specifier = ">=2.2.0" },
     { name = "sentence-transformers", marker = "extra == 'embeddings'", specifier = ">=2.2.0" },
     { name = "torch", specifier = ">=2.0.0" },
-    { name = "torchsort", marker = "extra == 'sorting'", specifier = ">=0.1.6" },
     { name = "tqdm", specifier = ">=4.65.0" },
     { name = "transformers", marker = "extra == 'distillation'", specifier = ">=4.30.0" },
     { name = "wordfreq", specifier = ">=3.1.1" },
 ]
-provides-extras = ["dev", "embeddings", "distillation", "sorting"]
+provides-extras = ["dev", "embeddings", "distillation"]
 
 [[package]]
 name = "tokenizers"
@@ -3144,15 +3140,6 @@ sdist = { url = "https://files.pythonhosted.org/packages/85/2e/48a887a59ecc4a10c
 wheels = [
     { url = "https://files.pythonhosted.org/packages/02/21/aa0f434434c48490f91b65962b1ce863fdcce63febc166ca9fe9d706c2b6/torchmetrics-1.8.2-py3-none-any.whl", hash = "sha256:08382fd96b923e39e904c4d570f3d49e2cc71ccabd2a94e0f895d1f0dac86242", size = 983161, upload-time = "2025-09-03T14:00:51.921Z" },
 ]
-
-[[package]]
-name = "torchsort"
-version = "0.1.10"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "torch" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/57/c8/f643cdde8bcfe2c9c2460ffeac83e2fecac9d5bb48fddaf61970547275aa/torchsort-0.1.10.tar.gz", hash = "sha256:416a7dd2ab88332b27e98318d7fb2e0243b9fb6f1fffcf77760d63103d70dd04", size = 22376, upload-time = "2025-06-09T17:12:25.182Z" }
 
 [[package]]
 name = "tqdm"

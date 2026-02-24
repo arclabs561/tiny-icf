@@ -35,7 +35,7 @@ Research-backed, low-heuristic improvements. No hand-picked anchor words or ad-h
 - `tiny_icf.calibration` — `load_calibration`, `save_calibration`, `apply_affine`.
 - `tiny_icf-predict --calibration <path>` and `evaluate_model.py --calibration <path>` apply the affine map to predictions.
 
-Usage: `uv run python scripts/fit_calibration.py --model models/multitask_all_fronts_v3b.pt --data data/word_frequency.csv` then pass `--calibration models/multitask_all_fronts_v3b.pt.cal.json` to predict or evaluate_model.
+Usage: `just fit-calibration MODEL=models/<name>.pt DATA=data/word_frequency.csv` then `just eval-en` / `just eval-en-spearman` or `evaluate_model.py --calibration <name>.pt.cal.json`.
 
 ---
 

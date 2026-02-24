@@ -55,6 +55,12 @@ fit-calibration MODEL="models/multitask_all_fronts_v3b.pt" DATA="data/word_frequ
 eval-v3b-cal MODEL="models/multitask_all_fronts_v3b.pt" DATA="data/word_frequency.csv" CAL="models/multitask_all_fronts_v3b.pt.cal.json":
     uv run python scripts/evaluate_model.py --model {{MODEL}} --data {{DATA}} --calibration {{CAL}}
 
+# Eval English-only models (with calibration if .cal.json exists)
+eval-en MODEL="models/multitask_en.pt" DATA="data/word_frequency.csv" CAL="models/multitask_en.pt.cal.json":
+    uv run python scripts/evaluate_model.py --model {{MODEL}} --data {{DATA}} --calibration {{CAL}} --max-samples 5000
+eval-en-spearman MODEL="models/multitask_en_best_spearman.pt" DATA="data/word_frequency.csv" CAL="models/multitask_en_best_spearman.pt.cal.json":
+    uv run python scripts/evaluate_model.py --model {{MODEL}} --data {{DATA}} --calibration {{CAL}} --max-samples 5000
+
 # Debug head-word predictions (base vs lang correction; --data shows target ICF)
 debug-the MODEL="models/multitask_all_fronts_v3b.pt" DATA="data/word_frequency.csv" *args:
     uv run python scripts/debug_the_prediction.py --model {{MODEL}} --data {{DATA}} {{args}}
