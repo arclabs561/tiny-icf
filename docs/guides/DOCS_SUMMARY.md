@@ -6,6 +6,7 @@
 - `../docs/guides/DATA_AND_MODELS.md` - Where data/models come from (repo is intentionally lean)
 - `../docs/guides/QUICK_START.md` - Quick start workflow
 - `../docs/guides/TRAINING_GUIDE.md` - Detailed training guide
+- `../docs/guides/CALIBRATION_AND_RANKING_GUIDE.md` - Calibration and ranking (frequency sampling, differentiable Spearman, learned calibration)
 - `../docs/guides/EPHEMERAL_TRAINING.md` - Training on ephemeral environments (RunPod)
 - `../docs/results/EXPERIMENTS.md` - Experiment history and results
 

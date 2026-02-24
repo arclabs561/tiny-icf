@@ -172,4 +172,4 @@ Start with:
 - `docs/PROJECT_OVERVIEW.md`
 - `docs/guides/QUICK_START.md`
 - `docs/guides/TRAINING_GUIDE.md`
-- `docs/guides/MAKING_IT_GOOD_MINIMAL_HEURISTICS.md` — improve calibration and ranking with minimal heuristics (frequency sampling, differentiable Spearman, learned calibration). **Calibration:** `uv run python scripts/fit_calibration.py --model models/<name>.pt --data data/word_frequency.csv` then `--calibration <name>.pt.cal.json` in predict or evaluate_model.
+- `docs/guides/CALIBRATION_AND_RANKING_GUIDE.md` — calibration and ranking: frequency-weighted sampling, differentiable Spearman (soft ranking), learned affine calibration. Use `just fit-calibration` then `just eval-en` or `evaluate_model.py --calibration <name>.pt.cal.json`.
