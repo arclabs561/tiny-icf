@@ -1,6 +1,5 @@
 """Tests for stratified_sample (especially frequency-weighted with replacement)."""
 
-import pytest
 from collections import Counter
 
 from tiny_icf.data import stratified_sample
