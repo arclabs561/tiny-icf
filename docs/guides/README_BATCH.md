@@ -21,12 +21,12 @@ uv run scripts/runpod_batch.py
 
 ## Training Script
 
-The training script (`train_batch.py`) is self-contained:
+The training script (`scripts/train_batch.py`) delegates to Lightning training:
 
 ```bash
 # On pod (after upload):
 cd /workspace/tiny-icf
-uv run scripts/train_batch.py
+uv run python scripts/train_batch.py --data data/... --output-dir /workspace/models --epochs 50
 ```
 
 **No installation needed!** Dependencies are in the script metadata.

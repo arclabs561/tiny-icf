@@ -4,7 +4,7 @@ Tiny byte-level model for estimating word commonality (ICF).
 
 Licensed under MIT.
 
-ICF is normalized to \([0, 1]\): **0.0 = very common**, **1.0 = very rare**.
+ICF is normalized to \([0, 1]\): **0.0 = very common**, **1.0 = very rare**. The Rust `icf-estimator` and Python models use a max word length of 20 bytes; longer words are truncated.
 
 ```bash
 uv sync --extra dev
@@ -162,9 +162,12 @@ Use `models/toy.pt` with `data/toy_word_frequency.csv` for the smoke-test model;
 ## Development
 
 ```bash
-just ci   # lint (ruff + black) + pytest
+uv pip install -e .   # optional: editable install for scripts that import tiny_icf
+just ci               # lint (ruff + black) + pytest
 # Or: uv run ruff check . && uv run black --check . && uv run pytest -q
 ```
+
+**Note:** Scripts under `scripts/` use `sys.path` to import `tiny_icf`; for a more robust setup, run `uv pip install -e .` first.
 
 ## Docs
 
