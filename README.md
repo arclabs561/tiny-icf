@@ -93,50 +93,9 @@ uv run python scripts/evaluate_downstream.py \
   --fix-conf-weight 16
 ```
 
-## Multi-task training (cross-language + historical + token hygiene)
+## Multi-task training
 
-If you want the model to learn **useful auxiliary signals** (and not just ICF), you can train a
-multi-task checkpoint that adds:
-- token hygiene classification (URLs/emails/code/numbers/mojibake/etc)
-- language + era classification (heuristic labels)
-- optional temporal ICF prediction across decades (historical n-grams)
-
-```bash
-mkdir -p data models
-
-# (Optional) build historical temporal targets (writes data/historical_ngrams/historical_icf_1gram.csv)
-bash scripts/setup_historical_data.sh
-
-# Train multi-task model and export a portable .pt checkpoint dict
-# If your frequency list is multilingual with lang:word keys, add: --multilingual
-uv run python scripts/train_all_fronts.py \
-  --data data/word_frequency.csv \
-  --hygiene --hygiene-noise-ratio 0.25 \
-  --temporal --temporal-data data/historical_ngrams/historical_icf_1gram.csv \
-  --export models/multitask_all_fronts.pt
-
-# Inspect learned auxiliary heads in prediction output (when --detailed is set)
-uv run tiny-icf-predict \
-  --model models/multitask_all_fronts.pt \
-  --words "http://example.com thou thee w00t qzxbjk" \
-  --detailed
-
-# Monitor: just check-training (v3b/v4) or uv run python scripts/watch_training.py [metrics.csv]
-just check-training
-
-# Evaluate (Jabberwocky + MAE/Spearman): see "Evaluate" section below.
-
-# English-only: frequency-weighted sampling, differentiable Spearman (default weight 5). Saves best-by-loss and best-by-Spearman.
-# Monitor: just train-en-status
-uv run python scripts/train_all_fronts.py \
-  --data data/word_frequency.csv \
-  --output-dir models/all_fronts_en \
-  --export models/multitask_en.pt \
-  --export-best-by-spearman models/multitask_en_best_spearman.pt \
-  --no-language --no-era \
-  --hygiene --hygiene-noise-ratio 0.25 \
-  --epochs 30 --train-max-samples 200000
-```
+Optional auxiliary heads: token hygiene classification, language/era classification, temporal ICF prediction. See `scripts/train_all_fronts.py --help` for options. Monitor with `just check-training`.
 
 ## Data and models
 
@@ -157,22 +116,11 @@ uv run python scripts/evaluate_model.py --model models/<name>.pt --jabberwocky-o
 ```
 Use `models/toy.pt` with `data/toy_word_frequency.csv` for the smoke-test model; use `multitask_all_fronts_v3b.pt` (or v3/v4) with `data/word_frequency.csv` for pre-trained. For English-only models with calibration: `just eval-en` or `just eval-en-spearman`.
 
-**Debugging head-word predictions:** If "the"/"and" are predicted too high (e.g. ~0.6 when target is ~0.14), run `just debug-the` (or `uv run python scripts/debug_the_prediction.py --model <path> --data data/word_frequency.csv`). The script prints base ICF, optional lang correction, and target from data. Root cause is usually underfitting of head words; use English-only training with frequency-weighted sampling (`just train-en`) to improve.
-
 ## Development
 
 ```bash
 uv pip install -e .   # optional: editable install for scripts that import tiny_icf
 just ci               # lint (ruff + black) + pytest
-# Or: uv run ruff check . && uv run black --check . && uv run pytest -q
 ```
 
-**Note:** Scripts under `scripts/` use `sys.path` to import `tiny_icf`; for a more robust setup, run `uv pip install -e .` first.
-
-## Docs
-
-Start with:
-- `docs/PROJECT_OVERVIEW.md`
-- `docs/guides/QUICK_START.md`
-- `docs/guides/TRAINING_GUIDE.md`
-- `docs/guides/CALIBRATION_AND_RANKING_GUIDE.md` — calibration and ranking: frequency-weighted sampling, differentiable Spearman (soft ranking), learned affine calibration. Use `just fit-calibration` then `just eval-en` or `evaluate_model.py --calibration <name>.pt.cal.json`.
+Further documentation in `docs/`: `PROJECT_OVERVIEW.md`, `guides/QUICK_START.md`, `guides/TRAINING_GUIDE.md`, `guides/CALIBRATION_AND_RANKING_GUIDE.md`.
