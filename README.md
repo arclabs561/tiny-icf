@@ -1,6 +1,6 @@
 # tiny-icf
 
-Tiny byte-level model for estimating word commonality (ICF).
+Compressed character-level model for word commonality estimation.
 
 Licensed under MIT.
 
