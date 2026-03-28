@@ -150,3 +150,7 @@ training_history/
 # Local eval/output artifacts
 eval_universal_*.json
 s
+
+# Hygiene (added by guardian audit)
+.env
+.env.*
