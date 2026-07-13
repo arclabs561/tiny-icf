@@ -30,7 +30,7 @@ dependencies = [
     ]
     distillation = [
         "sentence-transformers>=2.2.0",  # Lightweight teacher models
-        "transformers>=4.30.0",  # For BERT/RoBERTa teacher models (optional)
+        "transformers>=5.5.0",  # For BERT/RoBERTa teacher models (optional)
     ]
 
 [project.scripts]
