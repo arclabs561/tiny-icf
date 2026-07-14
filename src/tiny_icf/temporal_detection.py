@@ -3,7 +3,6 @@
 import re
 from typing import Dict, Optional
 
-
 # Historical era patterns
 ERA_PATTERNS = {
     "archaic": {

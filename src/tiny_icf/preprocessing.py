@@ -13,7 +13,6 @@ import html
 from typing import List
 from urllib.parse import urlparse
 
-
 # Common HTML entities
 HTML_ENTITIES = {
     "&nbsp;",

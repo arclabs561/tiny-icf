@@ -2,7 +2,6 @@
 
 from typing import List, Dict, Tuple
 
-
 # Language-specific character patterns
 LANGUAGE_PATTERNS = {
     "en": {
